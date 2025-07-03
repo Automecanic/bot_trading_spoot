@@ -1,67 +1,109 @@
-import os
-import time
-from binance.client import Client
-from binance.exceptions import BinanceAPIException
-from dotenv import load_dotenv
+# Importamos librerías necesarias
+import os                  # Para trabajar con variables de entorno
+import time                # Para hacer pausas (sleep)
+import json                # Para leer/escribir archivos en formato JSON
+from binance.client import Client                   # Cliente principal de la API de Binance
+from binance.exceptions import BinanceAPIException  # Para capturar errores específicos de Binance
+from dotenv import load_dotenv                      # Para cargar variables desde un archivo .env
 
+# Cargamos las variables de entorno desde .env
 load_dotenv()
 
+# Obtenemos la clave y el secreto de API desde el entorno
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
 
+# Creamos el cliente de Binance
 client = Client(api_key, api_secret)
-client.API_URL = 'https://testnet.binance.vision/api'  # <- línea clave
 
+# Nombre del archivo donde se guardará la última operación realizada
+estado_file = "estado.json"
 
+# Función para cargar la última operación guardada en el archivo JSON
+def cargar_ultimo_estado():
+    if os.path.exists(estado_file):  # Si el archivo existe
+        with open(estado_file, "r") as f:  # Lo abrimos en modo lectura
+            return json.load(f).get("ultima_operacion")  # Devolvemos el valor de "ultima_operacion"
+    return None  # Si el archivo no existe, devolvemos None
+
+# Función para guardar una operación ("buy" o "sell") en el archivo JSON
+def guardar_estado(operacion):
+    with open(estado_file, "w") as f:  # Abrimos en modo escritura
+        json.dump({"ultima_operacion": operacion}, f)  # Guardamos un diccionario con la operación
+
+# Función para mostrar el saldo disponible en BTC y USDT
 def mostrar_saldo():
-    info = client.get_account()
-    balances = info['balances']
+    info = client.get_account()  # Obtenemos información de la cuenta
+    balances = info['balances']  # Accedemos a la lista de balances
+    # Buscamos los balances de BTC y USDT
     btc = next((b for b in balances if b['asset'] == 'BTC'), None)
     usdt = next((b for b in balances if b['asset'] == 'USDT'), None)
+    # Convertimos los valores a float (si existen)
     btc_free = float(btc['free']) if btc else 0.0
     usdt_free = float(usdt['free']) if usdt else 0.0
+    # Mostramos los saldos por consola
     print(f"Saldo BTC: {btc_free}")
     print(f"Saldo USDT: {usdt_free}")
-    return btc_free, usdt_free
+    return btc_free, usdt_free  # Devolvemos los saldos
 
+# Función para obtener el precio actual de un par, por defecto BTCUSDT
 def obtener_precio(simbolo="BTCUSDT"):
-    ticker = client.get_symbol_ticker(symbol=simbolo)
-    return float(ticker['price'])
+    ticker = client.get_symbol_ticker(symbol=simbolo)  # Llamamos a la API de Binance
+    return float(ticker['price'])  # Devolvemos el precio como número decimal
 
+# Función para realizar una orden de compra de mercado
 def comprar(simbolo="BTCUSDT", cantidad=0.0001):
     try:
-        orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)
-        print("Compra realizada:", orden)
-    except BinanceAPIException as e:
+        orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)  # Ejecutamos la compra
+        print("Compra realizada:", orden)  # Mostramos detalles de la orden
+        guardar_estado("buy")  # Guardamos que la última operación fue una compra
+    except BinanceAPIException as e:  # Si hay un error con Binance
         print("Error en compra:", e)
 
+# Función para realizar una orden de venta de mercado
 def vender(simbolo="BTCUSDT", cantidad=0.0001):
     try:
-        orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)
-        print("Venta realizada:", orden)
-    except BinanceAPIException as e:
+        orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)  # Ejecutamos la venta
+        print("Venta realizada:", orden)  # Mostramos detalles de la orden
+        guardar_estado("sell")  # Guardamos que la última operación fue una venta
+    except BinanceAPIException as e:  # Si hay un error con Binance
         print("Error en venta:", e)
 
+# Código principal que se ejecuta continuamente
 if __name__ == "__main__":
-    while True:
+    while True:  # Bucle infinito (se puede detener manualmente o con Ctrl+C)
         try:
+            # Obtenemos el precio actual de BTC/USDT
             precio = obtener_precio()
             print(f"Precio actual BTCUSDT: {precio}")
+
+            # Obtenemos los saldos disponibles
             btc_saldo, usdt_saldo = mostrar_saldo()
 
-            if usdt_saldo > 10:
+            # Cargamos la última operación realizada desde archivo
+            ultima_operacion = cargar_ultimo_estado()
+
+            # Si hay suficiente USDT y la última operación NO fue una compra, compramos
+            if usdt_saldo > 10 and ultima_operacion != "buy":
                 print("Intentando comprar 0.0001 BTC...")
                 comprar(cantidad=0.0001)
-            if btc_saldo > 0.0001:
+
+            # Si hay suficiente BTC y la última operación NO fue una venta, vendemos
+            elif btc_saldo > 0.0001 and ultima_operacion != "sell":
                 print("Intentando vender 0.0001 BTC...")
                 vender(cantidad=0.0001)
 
+            else:
+                # Si no se cumplen las condiciones, no se hace ninguna operación
+                print("No se realiza operación para evitar duplicados.")
+
         except Exception as e:
+            # Captura errores generales
             print("Error en ejecución:", e)
 
+        # Esperamos 5 minutos (300 segundos) antes de repetir el ciclo
         print("Esperando 5 minutos...\n")
         time.sleep(300)
-
 
 
 
