@@ -1,15 +1,15 @@
-import os
 from binance.client import Client
 
-API_KEY = os.getenv('API_KEY')
-API_SECRET = os.getenv('API_SECRET')
+API_KEY = 'MyvGrDW2265mVJPSnutjfQI30iDeXRlIfpOvukmMr2nkfGmtLoqFBnAMeAarEtmG'
+API_SECRET = 'TzL96pBfVixnjSe4hcjfAIPZcqvhHDS61mHxVjZjenlMgG7cnVSvbQlufe0q2xrH5'
 
-client = Client(API_KEY, API_SECRET)
-client.API_URL = 'https://testnet.binance.vision/api'
+client = Client(API_KEY, API_SECRET, testnet=True)
 
-ticker = client.get_symbol_ticker(symbol='BTCUSDT')
-print(f"Precio BTC/USDT en testnet: {ticker['price']}")
-
+try:
+    ticker = client.get_symbol_ticker(symbol='BTCUSDT')
+    print("Precio BTC/USDT:", ticker['price'])
+except Exception as e:
+    print("Error:", e)
 
 """
 import time
