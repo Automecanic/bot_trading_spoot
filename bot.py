@@ -55,20 +55,45 @@ def obtener_precio(simbolo="BTCUSDT"):
 # Función para realizar una orden de compra de mercado
 def comprar(simbolo="BTCUSDT", cantidad=0.0001):
     try:
-        orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)  # Ejecutamos la compra
-        print("Compra realizada:", orden)  # Mostramos detalles de la orden
-        guardar_estado("buy")  # Guardamos que la última operación fue una compra
-    except BinanceAPIException as e:  # Si hay un error con Binance
-        print("Error en compra:", e)
+        orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)
+        guardar_estado("buy")
+        
+        # Extraer datos relevantes
+        precio = orden['fills'][0]['price']
+        cantidad_comprada = orden['executedQty']
+        total_usdt = orden['cummulativeQuoteQty']
+        comision = orden['fills'][0]['commission']
+        print(f"✅ COMPRA REALIZADA:")
+        print(f" - Símbolo: {orden['symbol']}")
+        print(f" - Cantidad comprada: {cantidad_comprada} BTC")
+        print(f" - Precio promedio: {precio} USDT")
+        print(f" - Total pagado: {total_usdt} USDT")
+        print(f" - Comisión: {comision} BTC")
+        
+    except BinanceAPIException as e:
+        print("❌ Error en compra:", e)
+
 
 # Función para realizar una orden de venta de mercado
-def vender(simbolo="BTCUSDT", cantidad=0.0001):
+ddef vender(simbolo="BTCUSDT", cantidad=0.0001):
     try:
-        orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)  # Ejecutamos la venta
-        print("Venta realizada:", orden)  # Mostramos detalles de la orden
-        guardar_estado("sell")  # Guardamos que la última operación fue una venta
-    except BinanceAPIException as e:  # Si hay un error con Binance
-        print("Error en venta:", e)
+        orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)
+        guardar_estado("sell")
+        
+        # Extraer datos relevantes
+        precio = orden['fills'][0]['price']
+        cantidad_vendida = orden['executedQty']
+        total_usdt = orden['cummulativeQuoteQty']
+        comision = orden['fills'][0]['commission']
+        print(f"✅ VENTA REALIZADA:")
+        print(f" - Símbolo: {orden['symbol']}")
+        print(f" - Cantidad vendida: {cantidad_vendida} BTC")
+        print(f" - Precio promedio: {precio} USDT")
+        print(f" - Total recibido: {total_usdt} USDT")
+        print(f" - Comisión: {comision} USDT")
+        
+    except BinanceAPIException as e:
+        print("❌ Error en venta:", e)
 
 # Código principal que se ejecuta continuamente
 if __name__ == "__main__":
