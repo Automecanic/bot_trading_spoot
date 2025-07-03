@@ -15,6 +15,7 @@ api_secret = os.getenv("BINANCE_API_SECRET")
 
 # Creamos el cliente de Binance
 client = Client(api_key, api_secret)
+client.API_URL = 'https://testnet.binance.vision/api'  # <- línea clave
 
 # Nombre del archivo donde se guardará la última operación realizada
 estado_file = "estado.json"
