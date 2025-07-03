@@ -1,108 +1,76 @@
-
-import os
+import time
 from binance.client import Client
+from binance.enums import *
+import os
+from dotenv import load_dotenv
 
-# Cargar las claves API desde variables de entorno
-API_KEY = os.getenv('API_KEY')
-API_SECRET = os.getenv('API_SECRET')
+# Cargar variables de entorno
+load_dotenv()
 
-# Crear cliente Binance apuntando a testnet
-client = Client(API_KEY, API_SECRET, testnet=True)
+API_KEY = os.getenv('BINANCE_API_KEY')
+API_SECRET = os.getenv('BINANCE_API_SECRET')
 
-# Definir el símbolo y los activos base y cotizados
+# Crear cliente para testnet (cambia según ambiente)
+client = Client(API_KEY, API_SECRET)
+client.API_URL = 'https://testnet.binance.vision/api'  # URL para testnet
+
 symbol = 'BTCUSDT'
-base_asset = 'BTC'   # activo que queremos comprar/vender
-quote_asset = 'USDT' # activo con el que pagamos
+quantity = 0.001  # Cantidad de BTC a comprar/vender, ajusta según tu saldo
 
-# Función para mostrar el saldo disponible de BTC y USDT
-def mostrar_saldo():
-    balances = client.get_account()['balances']  # Obtener balances de la cuenta
-    btc_balance = next((b for b in balances if b['asset'] == base_asset), None)
-    usdt_balance = next((b for b in balances if b['asset'] == quote_asset), None)
-    print(f"Saldo BTC: {btc_balance['free'] if btc_balance else '0'}")
-    print(f"Saldo USDT: {usdt_balance['free'] if usdt_balance else '0'}")
+def get_balance(asset):
+    """Obtiene el saldo disponible para un asset dado"""
+    info = client.get_account()
+    for b in info['balances']:
+        if b['asset'] == asset:
+            return float(b['free'])
+    return 0.0
 
-# Función para crear una orden limitada de compra
-def comprar_limitada(quantity, limit_price):
-    try:
-        order = client.create_order(
-            symbol=symbol,
-            side='BUY',                # tipo compra
-            type='LIMIT',              # orden limitada
-            timeInForce='GTC',         # válida hasta cancelar o ejecutar
-            quantity=quantity,         # cantidad a comprar
-            price=str(limit_price)     # precio límite
-        )
-        print("Orden limitada de compra creada:", order)
-    except Exception as e:
-        print("Error comprando:", e)
+def main_loop():
+    while True:
+        try:
+            # Obtener precio actual
+            ticker = client.get_symbol_ticker(symbol=symbol)
+            price = float(ticker['price'])
+            print(f"Precio actual {symbol}: {price}")
 
-# Función para vender al precio de mercado toda una cantidad dada
-def vender_market(quantity):
-    try:
-        order = client.create_order(
-            symbol=symbol,
-            side='SELL',               # tipo venta
-            type='MARKET',             # orden de mercado (ejecuta al mejor precio)
-            quantity=quantity          # cantidad a vender
-        )
-        print("Orden de venta a mercado creada:", order)
-    except Exception as e:
-        print("Error vendiendo:", e)
+            # Mostrar saldo USDT y BTC
+            usdt_balance = get_balance('USDT')
+            btc_balance = get_balance('BTC')
+            print(f"Saldo USDT: {usdt_balance:.2f}, Saldo BTC: {btc_balance:.6f}")
 
-# Función para colocar una orden stop loss limitada para proteger la posición
-def colocar_stop_loss(quantity, stop_price, stop_limit_price):
-    try:
-        order = client.create_order(
-            symbol=symbol,
-            side='SELL',               # venta para proteger
-            type='STOP_LOSS_LIMIT',    # orden stop loss limitada
-            quantity=quantity,         # cantidad a vender si se activa
-            price=str(stop_limit_price), # precio límite para la orden stop
-            stopPrice=str(stop_price),   # precio trigger que activa la orden stop
-            timeInForce='GTC'          # válida hasta cancelar o ejecutar
-        )
-        print("Orden stop loss creada:", order)
-    except Exception as e:
-        print("Error creando stop loss:", e)
+            # Condición simple: si el precio es menor a 90k, compramos BTC
+            # si es mayor a 110k, vendemos BTC
+            # (ajusta los valores según convenga)
+
+            if price < 90000 and usdt_balance >= price * quantity:
+                # Orden de compra de mercado
+                order = client.create_order(
+                    symbol=symbol,
+                    side=SIDE_BUY,
+                    type=ORDER_TYPE_MARKET,
+                    quantity=quantity
+                )
+                print(f"Orden de compra ejecutada: {order}")
+            elif price > 110000 and btc_balance >= quantity:
+                # Orden de venta de mercado
+                order = client.create_order(
+                    symbol=symbol,
+                    side=SIDE_SELL,
+                    type=ORDER_TYPE_MARKET,
+                    quantity=quantity
+                )
+                print(f"Orden de venta ejecutada: {order}")
+            else:
+                print("No se cumplen condiciones para operar.")
+
+        except Exception as e:
+            print(f"Error en la ejecución: {e}")
+
+        # Esperar 5 minutos antes de la siguiente iteración
+        time.sleep(5 * 60)
 
 if __name__ == "__main__":
-    # Mostrar saldo inicial antes de operaciones
-    print("Saldo inicial:")
-    mostrar_saldo()
-
-    # Parámetros para la compra limitada
-    cantidad_compra = 0.001
-    precio_limite = 20000
-
-    # Crear orden limitada de compra
-    comprar_limitada(cantidad_compra, precio_limite)
-
-    # Parámetros para el stop loss (venta si baja de cierto precio)
-    stop_price = 19000
-    stop_limit_price = 18950
-
-    # Colocar orden stop loss para proteger la compra
-    colocar_stop_loss(cantidad_compra, stop_price, stop_limit_price)
-
-    # Mostrar saldo después de colocar órdenes
-    print("\nSaldo después de la compra:")
-    mostrar_saldo()
-
-    # Consultar saldo actual para vender todo lo que tengamos en BTC
-    balances = client.get_account()['balances']
-    btc_balance = next((b for b in balances if b['asset'] == base_asset), None)
-    cantidad_venta = float(btc_balance['free']) if btc_balance else 0
-
-    # Si hay BTC, vender todo a mercado
-    if cantidad_venta > 0:
-        vender_market(cantidad_venta)
-    else:
-        print("No tienes BTC para vender.")
-
-    # Mostrar saldo final después de la venta
-    print("\nSaldo final:")
-    mostrar_saldo()
+    main_loop()
 
 
 
