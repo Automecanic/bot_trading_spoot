@@ -75,7 +75,7 @@ def comprar(simbolo="BTCUSDT", cantidad=0.0001):
 
 
 # Función para realizar una orden de venta de mercado
-ddef vender(simbolo="BTCUSDT", cantidad=0.0001):
+def vender(simbolo="BTCUSDT", cantidad=0.0001):
     try:
         orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)
         guardar_estado("sell")
