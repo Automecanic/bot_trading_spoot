@@ -4,73 +4,81 @@ from binance.enums import *
 import os
 from dotenv import load_dotenv
 
-# Cargar variables de entorno
-load_dotenv()
+import os
+import time
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
 
-API_KEY = os.getenv('BINANCE_API_KEY')
-API_SECRET = os.getenv('BINANCE_API_SECRET')
+# Carga las variables de entorno
+api_key = os.getenv("BINANCE_API_KEY")
+api_secret = os.getenv("BINANCE_API_SECRET")
 
-# Crear cliente para testnet (cambia según ambiente)
-client = Client(API_KEY, API_SECRET)
-client.API_URL = 'https://testnet.binance.vision/api'  # URL para testnet
+# Verifica que las variables se cargaron
+if not api_key or not api_secret:
+    raise ValueError("Las variables de entorno BINANCE_API_KEY y BINANCE_API_SECRET deben estar configuradas.")
 
-symbol = 'BTCUSDT'
-quantity = 0.001  # Cantidad de BTC a comprar/vender, ajusta según tu saldo
+# Crea el cliente de Binance y sincroniza tiempo para evitar errores de firma
+client = Client(api_key, api_secret)
+client.time_sync()
 
-def get_balance(asset):
-    """Obtiene el saldo disponible para un asset dado"""
+def mostrar_saldo():
+    """Muestra el saldo disponible de BTC y USDT en la cuenta."""
     info = client.get_account()
-    for b in info['balances']:
-        if b['asset'] == asset:
-            return float(b['free'])
-    return 0.0
+    balances = info['balances']
+    btc_balance = next((b for b in balances if b['asset'] == 'BTC'), None)
+    usdt_balance = next((b for b in balances if b['asset'] == 'USDT'), None)
 
-def main_loop():
+    btc_free = float(btc_balance['free']) if btc_balance else 0.0
+    usdt_free = float(usdt_balance['free']) if usdt_balance else 0.0
+
+    print(f"Saldo BTC disponible: {btc_free}")
+    print(f"Saldo USDT disponible: {usdt_free}")
+    return btc_free, usdt_free
+
+def obtener_precio(simbolo="BTCUSDT"):
+    """Obtiene el precio actual del par dado."""
+    ticker = client.get_symbol_ticker(symbol=simbolo)
+    return float(ticker['price'])
+
+def comprar(simbolo="BTCUSDT", cantidad=0.0001):
+    """Realiza una orden de compra de mercado."""
+    try:
+        orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)
+        print(f"Compra realizada: {orden}")
+    except BinanceAPIException as e:
+        print(f"Error en compra: {e}")
+
+def vender(simbolo="BTCUSDT", cantidad=0.0001):
+    """Realiza una orden de venta de mercado."""
+    try:
+        orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)
+        print(f"Venta realizada: {orden}")
+    except BinanceAPIException as e:
+        print(f"Error en venta: {e}")
+
+if __name__ == "__main__":
     while True:
         try:
-            # Obtener precio actual
-            ticker = client.get_symbol_ticker(symbol=symbol)
-            price = float(ticker['price'])
-            print(f"Precio actual {symbol}: {price}")
+            precio = obtener_precio()
+            print(f"Precio actual {precio} USD")
 
-            # Mostrar saldo USDT y BTC
-            usdt_balance = get_balance('USDT')
-            btc_balance = get_balance('BTC')
-            print(f"Saldo USDT: {usdt_balance:.2f}, Saldo BTC: {btc_balance:.6f}")
+            btc_saldo, usdt_saldo = mostrar_saldo()
 
-            # Condición simple: si el precio es menor a 90k, compramos BTC
-            # si es mayor a 110k, vendemos BTC
-            # (ajusta los valores según convenga)
-
-            if price < 90000 and usdt_balance >= price * quantity:
-                # Orden de compra de mercado
-                order = client.create_order(
-                    symbol=symbol,
-                    side=SIDE_BUY,
-                    type=ORDER_TYPE_MARKET,
-                    quantity=quantity
-                )
-                print(f"Orden de compra ejecutada: {order}")
-            elif price > 110000 and btc_balance >= quantity:
-                # Orden de venta de mercado
-                order = client.create_order(
-                    symbol=symbol,
-                    side=SIDE_SELL,
-                    type=ORDER_TYPE_MARKET,
-                    quantity=quantity
-                )
-                print(f"Orden de venta ejecutada: {order}")
-            else:
-                print("No se cumplen condiciones para operar.")
+            # Ejemplo simple: si tienes más de 10 USDT, compra una fracción pequeña de BTC
+            if usdt_saldo > 10:
+                print("Intentando comprar 0.0001 BTC...")
+                comprar(cantidad=0.0001)
+            # Si tienes más de 0.0001 BTC, vende esa cantidad
+            if btc_saldo > 0.0001:
+                print("Intentando vender 0.0001 BTC...")
+                vender(cantidad=0.0001)
 
         except Exception as e:
             print(f"Error en la ejecución: {e}")
 
-        # Esperar 5 minutos antes de la siguiente iteración
-        time.sleep(5 * 60)
+        print("Esperando 5 minutos para la siguiente iteración...\n")
+        time.sleep(300)  # Espera 300 segundos (5 minutos)
 
-if __name__ == "__main__":
-    main_loop()
 
 
 
