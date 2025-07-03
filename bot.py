@@ -1,3 +1,17 @@
+import os
+from binance.client import Client
+
+API_KEY = os.getenv('API_KEY')
+API_SECRET = os.getenv('API_SECRET')
+
+client = Client(API_KEY, API_SECRET)
+client.API_URL = 'https://testnet.binance.vision/api'
+
+ticker = client.get_symbol_ticker(symbol='BTCUSDT')
+print(f"Precio BTC/USDT en testnet: {ticker['price']}")
+
+
+"""
 import time
 import os
 from dotenv import load_dotenv
@@ -129,3 +143,4 @@ while True:
         print("❌ Error:", e)  # Mostrar error
         time.sleep(espera)  # Esperar antes de reintentar
 
+"""
