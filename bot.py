@@ -63,6 +63,7 @@ if __name__ == "__main__":
 
 
 
+
 """from binance.client import Client
 
 API_KEY = 'MyvGrDW2265mVJPSnutjfQI30iDeXRlIfpOvukmMr2nkfGmtLoqFBnAMeAarEtmG'
