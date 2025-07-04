@@ -88,7 +88,6 @@ except Exception as e:
     logger.warning(f"ADVERTENCIA: No se pudo sincronizar la hora con Binance. Esto podría causar errores: {e}")
     send_telegram_message(f"⚠️ ADVERTENCIA: Error al sincronizar hora con Binance\\. Posibles problemas futuros: `{e}`")
 
----
 
 ### Función `send_telegram_message` (Implementación Final)
 
