@@ -14,7 +14,7 @@ load_dotenv()
 # Inicialización de claves API y bot de Telegram
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
-telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+telegram_token = os.getenv("TELEGRAM_TOKEN")
 telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
 # Cliente de Binance apuntando a Testnet
