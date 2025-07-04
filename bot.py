@@ -1,26 +1,33 @@
 import os
 import time
+import logging
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from dotenv import load_dotenv
 
-# Cargar las variables de entorno del archivo .env
+# Cargar variables de entorno desde el archivo .env
 load_dotenv()
 
-# Obtener las claves de API desde las variables de entorno
+# Configurar el archivo de log donde se guardarán todas las operaciones
+logging.basicConfig(
+    filename='operaciones.log',              # Archivo donde se guardan los logs
+    level=logging.INFO,                      # Nivel de los mensajes (INFO, DEBUG, ERROR, etc.)
+    format='%(asctime)s - %(message)s',      # Formato del mensaje del log
+    datefmt='%Y-%m-%d %H:%M:%S'              # Formato de la fecha
+)
+
+# Obtener las claves API desde el archivo .env
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
 
-# Crear cliente de Binance con claves API
+# Crear el cliente de Binance con las claves API
 client = Client(api_key, api_secret)
 client.API_URL = 'https://testnet.binance.vision/api'  # <- línea clave
 
-# Variables para controlar operaciones duplicadas
-ultima_operacion = None  # puede ser 'compra' o 'venta'
-ultimo_precio = 0.0      # guarda el precio de la última operación
-umbral_variacion = 0.001 # 0.1% de variación mínima para volver a operar
+# Inicializar el beneficio acumulado
+beneficio_total = 0.0
 
-# Función para mostrar saldos actuales de BTC y USDT
+# Función para mostrar el saldo actual de BTC y USDT
 def mostrar_saldo():
     info = client.get_account()
     balances = info['balances']
@@ -32,75 +39,93 @@ def mostrar_saldo():
     print(f"Saldo USDT: {usdt_free}")
     return btc_free, usdt_free
 
-# Función para obtener el precio actual del símbolo
+# Función para obtener el precio actual de BTC/USDT
 def obtener_precio(simbolo="BTCUSDT"):
     ticker = client.get_symbol_ticker(symbol=simbolo)
     return float(ticker['price'])
 
-# Función para comprar BTC
+# Función para realizar una compra de BTC
 def comprar(simbolo="BTCUSDT", cantidad=0.0001):
     try:
         orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)
+        # Extraer datos de la orden
         fill = orden['fills'][0]
+        precio = fill['price']
+        total = float(precio) * float(fill['qty'])
+        comision = fill['commission']
+        comision_asset = fill['commissionAsset']
+        # Imprimir detalles
         print("\n✅ COMPRA REALIZADA:")
-        print(f" - Símbolo: {orden['symbol']}")
-        print(f" - Cantidad comprada: {orden['executedQty']} BTC")
-        print(f" - Precio promedio: {fill['price']} USDT")
-        print(f" - Total pagado: {orden['cummulativeQuoteQty']} USDT")
-        print(f" - Comisión: {fill['commission']} {fill['commissionAsset']}")
+        print(f" - Símbolo: {simbolo}")
+        print(f" - Cantidad comprada: {fill['qty']} BTC")
+        print(f" - Precio promedio: {precio} USDT")
+        print(f" - Total pagado: {total:.8f} USDT")
+        print(f" - Comisión: {comision} {comision_asset}")
+        # Registrar en el log
+        logging.info(f"COMPRA - Cantidad: {fill['qty']} BTC - Precio: {precio} - Total: {total:.8f} USDT - Comisión: {comision} {comision_asset}")
+        return total
     except BinanceAPIException as e:
         print("❌ Error en compra:", e)
+        return 0.0
 
-# Función para vender BTC
+# Función para realizar una venta de BTC
 def vender(simbolo="BTCUSDT", cantidad=0.0001):
     try:
         orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)
+        # Extraer datos de la orden
         fill = orden['fills'][0]
+        precio = fill['price']
+        total = float(precio) * float(fill['qty'])
+        comision = fill['commission']
+        comision_asset = fill['commissionAsset']
+        # Imprimir detalles
         print("\n✅ VENTA REALIZADA:")
-        print(f" - Símbolo: {orden['symbol']}")
-        print(f" - Cantidad vendida: {orden['executedQty']} BTC")
-        print(f" - Precio promedio: {fill['price']} USDT")
-        print(f" - Total recibido: {orden['cummulativeQuoteQty']} USDT")
-        print(f" - Comisión: {fill['commission']} {fill['commissionAsset']}")
+        print(f" - Símbolo: {simbolo}")
+        print(f" - Cantidad vendida: {fill['qty']} BTC")
+        print(f" - Precio promedio: {precio} USDT")
+        print(f" - Total recibido: {total:.8f} USDT")
+        print(f" - Comisión: {comision} {comision_asset}")
+        # Registrar en el log
+        logging.info(f"VENTA - Cantidad: {fill['qty']} BTC - Precio: {precio} - Total: {total:.8f} USDT - Comisión: {comision} {comision_asset}")
+        return total
     except BinanceAPIException as e:
         print("❌ Error en venta:", e)
+        return 0.0
 
-# Bucle principal de ejecución
+# Bucle principal del bot
 if __name__ == "__main__":
     while True:
         try:
-            # Obtener precio actual
+            # Obtener el precio actual
             precio = obtener_precio()
             print(f"\nPrecio actual BTCUSDT: {precio}")
 
-            # Obtener saldos
+            # Mostrar el saldo disponible
             btc_saldo, usdt_saldo = mostrar_saldo()
 
-            # Lógica para evitar operaciones duplicadas innecesarias
-            # Si se permite comprar
-            if usdt_saldo > 10 and (
-                ultima_operacion != "compra" or abs(precio - ultimo_precio) / ultimo_precio > umbral_variacion
-            ):
+            # Si hay suficiente USDT, comprar
+            if usdt_saldo > 10:
                 print("\nIntentando comprar 0.0001 BTC...")
-                comprar(cantidad=0.0001)
-                ultima_operacion = "compra"
-                ultimo_precio = precio
+                total_pagado = comprar(cantidad=0.0001)
+                beneficio_total -= total_pagado  # Registrar como gasto
 
-            # Si se permite vender
-            if btc_saldo > 0.0001 and (
-                ultima_operacion != "venta" or abs(precio - ultimo_precio) / ultimo_precio > umbral_variacion
-            ):
+            # Si hay suficiente BTC, vender
+            if btc_saldo > 0.0001:
                 print("\nIntentando vender 0.0001 BTC...")
-                vender(cantidad=0.0001)
-                ultima_operacion = "venta"
-                ultimo_precio = precio
+                total_recibido = vender(cantidad=0.0001)
+                beneficio_total += total_recibido  # Registrar como ingreso
+
+            # Mostrar beneficio acumulado en consola
+            print(f"\n📈 Beneficio acumulado: {beneficio_total:.8f} USDT")
 
         except Exception as e:
             print("❌ Error en ejecución:", e)
 
-        # Esperar 5 minutos entre ciclos
+        # Esperar 5 minutos
         print("\nEsperando 5 minutos...\n")
         time.sleep(300)
+
+
 
 
 
