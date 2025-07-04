@@ -109,7 +109,9 @@ while True:
         if saldo_btc > 0:
             # Si ya tenemos BTC, intentamos vender
             print("\nIntentando vender BTC...")
-            orden_venta = vender_btc(round(saldo_btc * PORCENTAJE_CAPITAL, 6))
+            cantidad_vender = round(saldo_btc * PORCENTAJE_CAPITAL - 0.000001, 6)
+            orden_venta = vender_btc(cantidad_vender)
+
             if orden_venta:
                 precio_salida = float(orden_venta['fills'][0]['price'])
                 cantidad_vendida = float(orden_venta['executedQty'])
