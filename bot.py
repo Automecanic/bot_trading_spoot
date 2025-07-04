@@ -91,7 +91,6 @@ except Exception as e:
 
 ### Función `send_telegram_message` (Implementación Final)
 
-```python
 def send_telegram_message(message):
     """
     Envía un mensaje de texto a un chat de Telegram específico usando requests.
