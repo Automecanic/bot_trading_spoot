@@ -1,47 +1,37 @@
 import os
 import time
-import logging
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from dotenv import load_dotenv
-import requests
+import logging
+import telegram
 
-# Cargar variables de entorno desde el archivo .env
 load_dotenv()
 
-# Credenciales de Binance (Testnet)
+# Configuración API Binance
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
-
-# Credenciales de Telegram
-telegram_token = os.getenv("TELEGRAM_TOKEN")
-telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
-
-# Crear cliente de Binance apuntando al entorno de testnet
 client = Client(api_key, api_secret)
 client.API_URL = 'https://testnet.binance.vision/api'
 
-# Configurar logging
-logging.basicConfig(
-    filename='trading.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+# Configuración Bot Telegram
+telegram_token = os.getenv("TELEGRAM_TOKEN")
+chat_id = os.getenv("TELEGRAM_CHAT_ID")
+bot = telegram.Bot(token=telegram_token)
 
-# Variables para seguimiento de ganancias
-ganancia_total = 0.0
+# Porcentaje fijo para invertir (ejemplo 5%)
+PORCENTAJE_INVERSIÓN = 0.05
 
-# Función para enviar mensaje a Telegram
+# Logger para archivo .log
+logging.basicConfig(filename='trading_bot.log', level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 def enviar_telegram(mensaje):
-    url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
-    payload = {"chat_id": telegram_chat_id, "text": mensaje}
     try:
-        requests.post(url, data=payload)
+        bot.send_message(chat_id=chat_id, text=mensaje)
     except Exception as e:
-        print("Error al enviar mensaje a Telegram:", e)
+        logging.error(f"Error enviando mensaje Telegram: {e}")
 
-# Obtener saldos de BTC y USDT
 def mostrar_saldo():
     info = client.get_account()
     balances = info['balances']
@@ -49,105 +39,101 @@ def mostrar_saldo():
     usdt = next((b for b in balances if b['asset'] == 'USDT'), None)
     btc_free = float(btc['free']) if btc else 0.0
     usdt_free = float(usdt['free']) if usdt else 0.0
-    print(f"Saldo BTC: {btc_free}")
-    print(f"Saldo USDT: {usdt_free}")
+    logging.info(f"Saldo BTC: {btc_free}")
+    logging.info(f"Saldo USDT: {usdt_free}")
     return btc_free, usdt_free
 
-# Obtener precio actual del par
 def obtener_precio(simbolo="BTCUSDT"):
     ticker = client.get_symbol_ticker(symbol=simbolo)
     return float(ticker['price'])
 
-# Ejecutar orden de compra
-def comprar(simbolo="BTCUSDT", cantidad=0.0001):
+def comprar(simbolo="BTCUSDT", monto_usdt=0):
     try:
+        precio = obtener_precio(simbolo)
+        cantidad = round(monto_usdt / precio, 6)  # calcular cantidad BTC con 6 decimales
         orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)
-        fill = orden['fills'][0]
-        precio = float(fill['price'])
-        total = float(fill['qty']) * precio
-        mensaje = (
-            f"✅ COMPRA REALIZADA:\n"
-            f"\n - Símbolo: {orden['symbol']}"
-            f"\n - Cantidad comprada: {fill['qty']} BTC"
-            f"\n - Precio promedio: {fill['price']} USDT"
-            f"\n - Total pagado: {total:.2f} USDT"
-            f"\n - Comisión: {fill['commission']} {fill['commissionAsset']}"
-        )
-        print(mensaje)
-        logging.info(mensaje)
-        enviar_telegram(mensaje)
-        return total
+        
+        # Información simplificada para logs y telegram
+        fills = orden.get('fills', [{}])[0]
+        precio_promedio = float(fills.get('price', 0))
+        qty = float(fills.get('qty', 0))
+        comision = float(fills.get('commission', 0))
+        comision_asset = fills.get('commissionAsset', '')
+        
+        msg = (f"✅ COMPRA REALIZADA:\n"
+               f" - Símbolo: {simbolo}\n"
+               f" - Cantidad comprada: {qty:.6f} BTC\n"
+               f" - Precio promedio: {precio_promedio:.8f} USDT\n"
+               f" - Total pagado: {precio_promedio * qty:.8f} USDT\n"
+               f" - Comisión: {comision:.8f} {comision_asset}")
+        
+        logging.info(msg)
+        enviar_telegram(msg)
+        
+        return qty  # cantidad comprada para saber cuánto vender después
+    
     except BinanceAPIException as e:
-        print("Error en compra:", e)
         logging.error(f"Error en compra: {e}")
-        enviar_telegram(f"❌ Error en compra: {e}")
-        return 0.0
+        enviar_telegram(f"Error en compra: {e}")
+        return 0
 
-# Ejecutar orden de venta
-def vender(simbolo="BTCUSDT", cantidad=0.0001, precio_compra=0.0):
-    global ganancia_total
+def vender(simbolo="BTCUSDT", cantidad=0):
     try:
         orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)
-        fill = orden['fills'][0]
-        precio_venta = float(fill['price'])
-        total_venta = float(fill['qty']) * precio_venta
-        ganancia = total_venta - precio_compra
-        ganancia_total += ganancia
-
-        mensaje = (
-            f"✅ VENTA REALIZADA:\n"
-            f"\n - Símbolo: {orden['symbol']}"
-            f"\n - Cantidad vendida: {fill['qty']} BTC"
-            f"\n - Precio promedio: {fill['price']} USDT"
-            f"\n - Total recibido: {total_venta:.2f} USDT"
-            f"\n - Comisión: {fill['commission']} {fill['commissionAsset']}"
-            f"\n - Ganancia: {ganancia:.2f} USDT"
-            f"\n - Ganancia acumulada: {ganancia_total:.2f} USDT"
-        )
-        print(mensaje)
-        logging.info(mensaje)
-        enviar_telegram(mensaje)
+        
+        fills = orden.get('fills', [{}])[0]
+        precio_promedio = float(fills.get('price', 0))
+        qty = float(fills.get('qty', 0))
+        comision = float(fills.get('commission', 0))
+        comision_asset = fills.get('commissionAsset', '')
+        
+        msg = (f"✅ VENTA REALIZADA:\n"
+               f" - Símbolo: {simbolo}\n"
+               f" - Cantidad vendida: {qty:.6f} BTC\n"
+               f" - Precio promedio: {precio_promedio:.8f} USDT\n"
+               f" - Total recibido: {precio_promedio * qty:.8f} USDT\n"
+               f" - Comisión: {comision:.8f} {comision_asset}")
+        
+        logging.info(msg)
+        enviar_telegram(msg)
+        
     except BinanceAPIException as e:
-        print("Error en venta:", e)
         logging.error(f"Error en venta: {e}")
-        enviar_telegram(f"❌ Error en venta: {e}")
+        enviar_telegram(f"Error en venta: {e}")
 
-# Bucle principal
 if __name__ == "__main__":
+    cantidad_btc_comprada = 0
+    
     while True:
         try:
-            # Obtener precio actual
             precio = obtener_precio()
-            print(f"\nPrecio actual BTCUSDT: {precio}")
-
-            # Mostrar saldos
+            logging.info(f"Precio actual BTCUSDT: {precio}")
             btc_saldo, usdt_saldo = mostrar_saldo()
-
-            # Comprar si hay suficiente USDT
-            if usdt_saldo > 10:
-                print("\nIntentando comprar 0.0001 BTC...")
-                total_pagado = comprar(cantidad=0.0001)
-            else:
-                total_pagado = 0.0
-
-            # Vender si hay suficiente BTC
-            if btc_saldo > 0.0001:
-                print("\nIntentando vender 0.0001 BTC...")
-                vender(cantidad=0.0001, precio_compra=total_pagado)
-
+            
+            # Calcular monto a invertir basado en porcentaje
+            monto_a_invertir = usdt_saldo * PORCENTAJE_INVERSIÓN
+            
+            # Solo comprar si hay suficiente saldo USDT
+            if monto_a_invertir > 10:  # evitar operaciones muy pequeñas
+                logging.info(f"Intentando comprar BTC por {monto_a_invertir:.2f} USDT...")
+                cantidad_btc_comprada = comprar(monto_usdt=monto_a_invertir)
+            
+            # Vender si tenemos BTC comprado y cantidad mínima
+            if cantidad_btc_comprada > 0.0001:
+                logging.info(f"Intentando vender {cantidad_btc_comprada:.6f} BTC...")
+                vender(cantidad=cantidad_btc_comprada)
+                cantidad_btc_comprada = 0  # reset para la próxima compra
+                
         except Exception as e:
-            print("Error en ejecución:", e)
-            logging.error(f"Error general: {e}")
-            enviar_telegram(f"⚠️ Error en ejecución: {e}")
-
-        # Esperar 5 minutos
-        print("\nEsperando 5 minutos...\n")
+            logging.error(f"Error en ejecución: {e}")
+            enviar_telegram(f"Error en ejecución: {e}")
+        
+        logging.info("Esperando 5 minutos...\n")
         time.sleep(300)
 
-
-
-
 """from binance.client import Client
+#client.API_URL = 'https://testnet.binance.vision/api'
+
 
 API_KEY = 'MyvGrDW2265mVJPSnutjfQI30iDeXRlIfpOvukmMr2nkfGmtLoqFBnAMeAarEtmG'
 API_SECRET = 'TzL96pBfVixnjSe4hcjfAIPZcqvhHDS61mHxVjZjenlMgG7cnVSvbQlufe0q2xrH5'
