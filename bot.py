@@ -1,4 +1,3 @@
-# ... (tus imports y configuracimport time
 import os
 import time
 import logging
@@ -8,22 +7,18 @@ from binance.exceptions import BinanceAPIException
 
 # =================== CONFIGURACIÓN ===================
 
-# Claves API de Binance
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 
-# Configuración de Telegram
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Parámetros de trading
 SYMBOL = "BTCUSDT"
-INTERVALO = 300  # Intervalo entre ciclos (en segundos)
-PORCENTAJE_CAPITAL = 0.1  # Porcentaje de capital USDT a usar por operación
+INTERVALO = 300  # en segundos
+PORCENTAJE_CAPITAL = 0.1  # 10% del capital por operación
+TAKE_PROFIT_PORCENTAJE = 0.02  # +2%
+STOP_LOSS_PORCENTAJE = 0.01    # -1%
 
-# =====================================================
-# =================== CONFIGURACIÓN ===================
-# (sin cambios)
 # =====================================================
 
 client = Client(API_KEY, API_SECRET)
@@ -109,32 +104,51 @@ while True:
         print(f"Saldo BTC: {saldo_btc}")
         print(f"Saldo USDT: {saldo_usdt}")
 
-        if saldo_btc > 0:
-            print("\nIntentando vender BTC...")
-            cantidad_vender = ajustar_cantidad(saldo_btc * PORCENTAJE_CAPITAL, step_size)
-            orden_venta = vender_btc(cantidad_vender)
+        if saldo_btc > 0 and precio_entrada:
+            variacion = (precio_actual - precio_entrada) / precio_entrada
 
+            if variacion >= TAKE_PROFIT_PORCENTAJE:
+                print("🎯 Condición de TAKE PROFIT alcanzada. Vendiendo...")
+            elif variacion <= -STOP_LOSS_PORCENTAJE:
+                print("🔻 Condición de STOP LOSS alcanzada. Vendiendo...")
+            else:
+                print("📉 Esperando condiciones de venta...")
+                time.sleep(INTERVALO)
+                continue
+
+            cantidad_vender = ajustar_cantidad(saldo_btc * PORCENTAJE_CAPITAL, step_size)
+            if cantidad_vender < step_size:
+                print("⚠️ Cantidad a vender demasiado pequeña.")
+                continue
+
+            orden_venta = vender_btc(cantidad_vender)
             if orden_venta:
                 precio_salida = float(orden_venta['fills'][0]['price'])
                 cantidad_vendida = float(orden_venta['executedQty'])
                 total_recibido = float(orden_venta['cummulativeQuoteQty'])
-                ganancia = (precio_salida - precio_entrada) * cantidad_vendida if precio_entrada else 0
+                ganancia = (precio_salida - precio_entrada) * cantidad_vendida
                 ganancia = round(ganancia, 2)
 
                 mensaje = (
                     f"✅ <b>VENTA REALIZADA</b>:\n\n"
                     f" - Símbolo: {SYMBOL}\n"
+                    f" - Precio entrada: {precio_entrada:.2f} USDT\n"
+                    f" - Precio venta: {precio_salida:.2f} USDT\n"
                     f" - Cantidad vendida: {cantidad_vendida:.8f} BTC\n"
-                    f" - Precio promedio: {precio_salida:.2f} USDT\n"
                     f" - Total recibido: {total_recibido:.2f} USDT\n"
-                    f" - Ganancia estimada: <b>{ganancia} USDT</b>"
+                    f" - Resultado: <b>{ganancia} USDT</b>"
                 )
                 send_telegram_message(mensaje)
                 precio_entrada = None
 
         elif saldo_usdt > 10:
-            print("\nIntentando comprar BTC...")
+            print("🛒 Intentando comprar BTC...")
             cantidad_btc = calcular_cantidad_a_comprar(precio_actual, saldo_usdt, step_size)
+
+            if cantidad_btc < step_size:
+                print("⚠️ Cantidad a comprar demasiado pequeña.")
+                continue
+
             orden_compra = comprar_btc(cantidad_btc)
             if orden_compra:
                 precio_entrada = float(orden_compra['fills'][0]['price'])
@@ -144,8 +158,8 @@ while True:
                 mensaje = (
                     f"✅ <b>COMPRA REALIZADA</b>:\n\n"
                     f" - Símbolo: {SYMBOL}\n"
+                    f" - Precio compra: {precio_entrada:.2f} USDT\n"
                     f" - Cantidad comprada: {cantidad_comprada:.8f} BTC\n"
-                    f" - Precio promedio: {precio_entrada:.2f} USDT\n"
                     f" - Total invertido: {total_usado:.2f} USDT"
                 )
                 send_telegram_message(mensaje)
@@ -160,6 +174,7 @@ while True:
         logging.error(f"Error general: {e}")
         send_telegram_message(f"❌ Error general: {e}")
         time.sleep(INTERVALO)
+
 
 
 """from binance.client import Client
