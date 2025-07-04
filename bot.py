@@ -2,45 +2,40 @@ import os
 import time
 import logging
 from binance.client import Client
+from binance.enums import *
 from binance.exceptions import BinanceAPIException
 from dotenv import load_dotenv
-from telegram import Bot
+import telegram
 import asyncio
 
-# Cargar variables de entorno (.env)
+# Cargar variables de entorno desde .env
 load_dotenv()
 
-# Configuración de la API de Binance (Testnet)
+# Inicialización de claves API y bot de Telegram
 api_key = os.getenv("BINANCE_API_KEY")
 api_secret = os.getenv("BINANCE_API_SECRET")
-
-# Inicializar cliente de Binance en modo testnet
-client = Client(api_key, api_secret)
-client.API_URL = 'https://testnet.binance.vision/api'  # Usar Testnet
-
-# Configurar Telegram
-telegram_token = os.getenv("TELEGRAM_TOKEN")
+telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
 telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
-bot = Bot(token=telegram_token)
 
-# Configurar logging (para escribir logs en un archivo)
+# Cliente de Binance apuntando a Testnet
+client = Client(api_key, api_secret)
+client.API_URL = 'https://testnet.binance.vision/api'
+
+# Inicialización del bot de Telegram
+bot = telegram.Bot(token=telegram_token)
+
+# Configuración de logging para guardar en archivo .log
 logging.basicConfig(
-    filename="trading.log",
+    filename="trading_bot.log",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Configuración de estrategia: usar % del saldo USDT
-PORCENTAJE_INVERSION = 0.1  # 10% del saldo USDT por operación
-
-# Guardar el último precio de compra para calcular ganancia/pérdida
-precio_ultima_compra = None
-
-# Función para enviar mensajes a Telegram (usando asyncio)
+# Función para enviar mensajes por Telegram (usando asyncio)
 async def enviar_telegram(mensaje):
     await bot.send_message(chat_id=telegram_chat_id, text=mensaje)
 
-# Función para mostrar el saldo de BTC y USDT
+# Función para mostrar saldos de BTC y USDT
 def mostrar_saldo():
     info = client.get_account()
     balances = info['balances']
@@ -48,8 +43,6 @@ def mostrar_saldo():
     usdt = next((b for b in balances if b['asset'] == 'USDT'), None)
     btc_free = float(btc['free']) if btc else 0.0
     usdt_free = float(usdt['free']) if usdt else 0.0
-    print(f"Saldo BTC: {btc_free}")
-    print(f"Saldo USDT: {usdt_free}")
     return btc_free, usdt_free
 
 # Obtener el precio actual de BTC
@@ -57,93 +50,121 @@ def obtener_precio(simbolo="BTCUSDT"):
     ticker = client.get_symbol_ticker(symbol=simbolo)
     return float(ticker['price'])
 
-# Ejecutar orden de compra con porcentaje del capital
-def comprar(simbolo="BTCUSDT", porcentaje=PORCENTAJE_INVERSION):
-    global precio_ultima_compra
+# Obtener reglas de trading del símbolo (como tamaño mínimo de lote)
+def obtener_lote_minimo(simbolo="BTCUSDT"):
+    exchange_info = client.get_symbol_info(simbolo)
+    lot_size_filter = next(f for f in exchange_info['filters'] if f['filterType'] == 'LOT_SIZE')
+    min_qty = float(lot_size_filter['minQty'])
+    step_size = float(lot_size_filter['stepSize'])
+    return min_qty, step_size
+
+# Redondear cantidad según step size
+def redondear_cantidad(cantidad, step_size):
+    precision = int(round(-1 * (math.log10(step_size))))
+    return round(cantidad, precision)
+
+# Compra usando un porcentaje fijo del capital en USDT
+def comprar(simbolo="BTCUSDT", porcentaje=0.01):
     try:
-        _, usdt = mostrar_saldo()
-        monto_usdt = usdt * porcentaje
-        precio_actual = obtener_precio(simbolo)
-        cantidad = round(monto_usdt / precio_actual, 6)
+        precio = obtener_precio(simbolo)
+        _, step_size = obtener_lote_minimo(simbolo)
+        _, usdt_saldo = mostrar_saldo()
+        monto_usdt = usdt_saldo * porcentaje
+
+        cantidad = monto_usdt / precio
+        cantidad = redondear_cantidad(cantidad, step_size)
 
         orden = client.order_market_buy(symbol=simbolo, quantity=cantidad)
-        precio_ultima_compra = float(orden['fills'][0]['price'])
-        total_usdt = float(orden['cummulativeQuoteQty'])
+
+        total = float(orden['cummulativeQuoteQty'])
+        avg_price = float(orden['fills'][0]['price'])
         comision = orden['fills'][0]['commission']
         comision_asset = orden['fills'][0]['commissionAsset']
 
         mensaje = (
-            f"✅ COMPRA REALIZADA:\n\n"
+            "✅ *COMPRA REALIZADA:*\n\n"
             f" - Símbolo: {simbolo}\n"
-            f" - Cantidad comprada: {orden['executedQty']} BTC\n"
-            f" - Precio promedio: {precio_ultima_compra:.8f} USDT\n"
-            f" - Total pagado: {total_usdt:.2f} USDT\n"
+            f" - Cantidad comprada: {cantidad:.8f} BTC\n"
+            f" - Precio promedio: {avg_price:.8f} USDT\n"
+            f" - Total pagado: {total:.2f} USDT\n"
             f" - Comisión: {comision} {comision_asset}"
         )
-        print(mensaje)
+
         logging.info(mensaje)
         asyncio.run(enviar_telegram(mensaje))
-    except BinanceAPIException as e:
-        print("Error en compra:", e)
-        logging.error(f"Error en compra: {e}")
+        return total
 
-# Ejecutar orden de venta por la misma cantidad comprada
-def vender(simbolo="BTCUSDT", porcentaje=PORCENTAJE_INVERSION):
-    global precio_ultima_compra
+    except BinanceAPIException as e:
+        logging.error(f"Error en compra: {e}")
+        asyncio.run(enviar_telegram(f"❌ Error en compra: {e}"))
+
+# Venta usando una cantidad fija o lo comprado anteriormente
+def vender(simbolo="BTCUSDT", cantidad=0.0001, total_compra=0.0):
     try:
-        btc, _ = mostrar_saldo()
-        cantidad = round(btc * porcentaje, 6)
+        precio = obtener_precio(simbolo)
+        _, step_size = obtener_lote_minimo(simbolo)
+
+        cantidad = redondear_cantidad(cantidad, step_size)
 
         orden = client.order_market_sell(symbol=simbolo, quantity=cantidad)
-        precio_venta = float(orden['fills'][0]['price'])
-        total_usdt = float(orden['cummulativeQuoteQty'])
+
+        total = float(orden['cummulativeQuoteQty'])
+        avg_price = float(orden['fills'][0]['price'])
         comision = orden['fills'][0]['commission']
         comision_asset = orden['fills'][0]['commissionAsset']
 
-        # Calcular ganancia si hay precio de compra previo
-        ganancia = 0
-        if precio_ultima_compra:
-            ganancia = (precio_venta - precio_ultima_compra) * float(orden['executedQty'])
-
+        ganancia = total - total_compra
         mensaje = (
-            f"✅ VENTA REALIZADA:\n\n"
+            "✅ *VENTA REALIZADA:*\n\n"
             f" - Símbolo: {simbolo}\n"
-            f" - Cantidad vendida: {orden['executedQty']} BTC\n"
-            f" - Precio promedio: {precio_venta:.8f} USDT\n"
-            f" - Total recibido: {total_usdt:.2f} USDT\n"
+            f" - Cantidad vendida: {cantidad:.8f} BTC\n"
+            f" - Precio promedio: {avg_price:.8f} USDT\n"
+            f" - Total recibido: {total:.2f} USDT\n"
             f" - Comisión: {comision} {comision_asset}\n"
             f" - Ganancia estimada: {ganancia:.2f} USDT"
         )
-        print(mensaje)
+
         logging.info(mensaje)
         asyncio.run(enviar_telegram(mensaje))
-    except BinanceAPIException as e:
-        print("Error en venta:", e)
-        logging.error(f"Error en venta: {e}")
+        return ganancia
 
-# Bucle principal
+    except BinanceAPIException as e:
+        logging.error(f"Error en venta: {e}")
+        asyncio.run(enviar_telegram(f"❌ Error en venta: {e}"))
+
+# ========================
+# Bucle principal del bot
+# ========================
 if __name__ == "__main__":
+    print("🚀 Iniciando bot de trading...\n")
     while True:
         try:
             precio = obtener_precio()
-            print(f"\n📊 Precio actual BTCUSDT: {precio}")
-            logging.info(f"Precio actual BTCUSDT: {precio}")
+            mensaje_precio = f"\n📊 Precio actual BTCUSDT: {precio:.2f}"
+            print(mensaje_precio)
+            asyncio.run(enviar_telegram(mensaje_precio))
 
             btc_saldo, usdt_saldo = mostrar_saldo()
+            print(f"Saldo BTC: {btc_saldo}")
+            print(f"Saldo USDT: {usdt_saldo}\n")
 
+            # Ejecutar compra si hay USDT suficiente
             if usdt_saldo > 10:
-                print("\nIntentando comprar BTC...")
-                comprar()
+                print("Intentando comprar BTC...\n")
+                total_compra = comprar(porcentaje=0.01)
+            else:
+                total_compra = 0
 
-            if btc_saldo > 0.0002:
-                print("\nIntentando vender BTC...")
-                vender()
+            # Ejecutar venta si hay BTC suficiente
+            if btc_saldo > 0.0001:
+                print("Intentando vender BTC...\n")
+                vender(cantidad=0.0001, total_compra=total_compra)
 
         except Exception as e:
-            print("❌ Error en ejecución:", e)
             logging.error(f"Error en ejecución: {e}")
+            asyncio.run(enviar_telegram(f"❌ Error general: {e}"))
 
-        print("\n⏳ Esperando 5 minutos...\n")
+        print("⏳ Esperando 5 minutos...\n")
         time.sleep(300)
 
 
