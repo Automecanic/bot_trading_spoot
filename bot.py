@@ -1,3 +1,4 @@
+# ... (tus imports y configuracimport time
 import os
 import time
 import logging
@@ -21,12 +22,13 @@ INTERVALO = 300  # Intervalo entre ciclos (en segundos)
 PORCENTAJE_CAPITAL = 0.1  # Porcentaje de capital USDT a usar por operación
 
 # =====================================================
+# =================== CONFIGURACIÓN ===================
+# (sin cambios)
+# =====================================================
 
-# Inicialización del cliente de Binance
 client = Client(API_KEY, API_SECRET)
 client.API_URL = 'https://testnet.binance.vision/api'
 
-# Configuración del logger para guardar operaciones y errores en un archivo .log
 logging.basicConfig(
     filename='trading_bot.log',
     level=logging.INFO,
@@ -36,17 +38,12 @@ logging.basicConfig(
 # ============ FUNCIONES ==============
 
 def send_telegram_message(message):
-    """Envía un mensaje a Telegram usando la API de requests."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ No se puede enviar mensaje de Telegram: TOKEN o CHAT_ID no configurados.")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID,
-        'text': message,
-        'parse_mode': 'HTML'
-    }
+    payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
 
     try:
         response = requests.post(url, json=payload)
@@ -56,25 +53,31 @@ def send_telegram_message(message):
         print(f"❌ Error al enviar mensaje de Telegram: {e}")
 
 def obtener_precio_actual():
-    """Obtiene el precio actual de mercado del símbolo definido."""
     ticker = client.get_symbol_ticker(symbol=SYMBOL)
     return float(ticker["price"])
 
 def obtener_saldos():
-    """Obtiene los saldos actuales de BTC y USDT."""
     cuenta = client.get_account()
     saldo_btc = float(next(asset["free"] for asset in cuenta["balances"] if asset["asset"] == "BTC"))
     saldo_usdt = float(next(asset["free"] for asset in cuenta["balances"] if asset["asset"] == "USDT"))
     return saldo_btc, saldo_usdt
 
-def calcular_cantidad_a_comprar(precio, saldo_usdt):
-    """Calcula la cantidad de BTC a comprar usando un porcentaje del saldo USDT."""
+def get_step_size(symbol):
+    info = client.get_symbol_info(symbol)
+    for f in info['filters']:
+        if f['filterType'] == 'LOT_SIZE':
+            return float(f['stepSize'])
+    return 0.000001
+
+def ajustar_cantidad(cantidad, step_size):
+    return round(cantidad - (cantidad % step_size), 6)
+
+def calcular_cantidad_a_comprar(precio, saldo_usdt, step_size):
     cantidad_usdt = saldo_usdt * PORCENTAJE_CAPITAL
     cantidad_btc = cantidad_usdt / precio
-    return round(cantidad_btc, 6)  # Redondeamos a 6 decimales para evitar errores LOT_SIZE
+    return ajustar_cantidad(cantidad_btc, step_size)
 
 def comprar_btc(cantidad):
-    """Realiza una orden de compra de BTC."""
     try:
         orden = client.order_market_buy(symbol=SYMBOL, quantity=cantidad)
         return orden
@@ -84,7 +87,6 @@ def comprar_btc(cantidad):
         return None
 
 def vender_btc(cantidad):
-    """Realiza una orden de venta de BTC."""
     try:
         orden = client.order_market_sell(symbol=SYMBOL, quantity=cantidad)
         return orden
@@ -96,6 +98,7 @@ def vender_btc(cantidad):
 # ============ BUCLE PRINCIPAL ==============
 
 precio_entrada = None
+step_size = get_step_size(SYMBOL)
 
 while True:
     try:
@@ -107,9 +110,8 @@ while True:
         print(f"Saldo USDT: {saldo_usdt}")
 
         if saldo_btc > 0:
-            # Si ya tenemos BTC, intentamos vender
             print("\nIntentando vender BTC...")
-            cantidad_vender = round(saldo_btc * PORCENTAJE_CAPITAL - 0.000001, 6)
+            cantidad_vender = ajustar_cantidad(saldo_btc * PORCENTAJE_CAPITAL, step_size)
             orden_venta = vender_btc(cantidad_vender)
 
             if orden_venta:
@@ -131,9 +133,8 @@ while True:
                 precio_entrada = None
 
         elif saldo_usdt > 10:
-            # Si tenemos USDT suficiente, intentamos comprar
             print("\nIntentando comprar BTC...")
-            cantidad_btc = calcular_cantidad_a_comprar(precio_actual, saldo_usdt)
+            cantidad_btc = calcular_cantidad_a_comprar(precio_actual, saldo_usdt, step_size)
             orden_compra = comprar_btc(cantidad_btc)
             if orden_compra:
                 precio_entrada = float(orden_compra['fills'][0]['price'])
