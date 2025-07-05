@@ -9,15 +9,14 @@ from binance.exceptions import BinanceAPIException
 
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
-
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-SYMBOL = "BTCUSDT"
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]
 INTERVALO = 300  # en segundos
-PORCENTAJE_CAPITAL = 0.1  # 10% del capital por operación
-TAKE_PROFIT_PORCENTAJE = 0.02  # +2%
-STOP_LOSS_PORCENTAJE = 0.01    # -1%
+PORCENTAJE_CAPITAL = 0.1
+STOP_LOSS_PCT = 0.02
+TAKE_PROFIT_PCT = 0.03
 
 # =====================================================
 
@@ -34,28 +33,24 @@ logging.basicConfig(
 
 def send_telegram_message(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ No se puede enviar mensaje de Telegram: TOKEN o CHAT_ID no configurados.")
+        print("⚠️ No se puede enviar mensaje de Telegram.")
         return
-
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
-
     try:
         response = requests.post(url, json=payload)
         response.raise_for_status()
-        print(f"✅ Mensaje de Telegram enviado: {message}")
+        print(f"✅ Mensaje enviado: {message}")
     except requests.exceptions.RequestException as e:
-        print(f"❌ Error al enviar mensaje de Telegram: {e}")
+        print(f"❌ Error al enviar mensaje: {e}")
 
-def obtener_precio_actual():
-    ticker = client.get_symbol_ticker(symbol=SYMBOL)
-    return float(ticker["price"])
+def obtener_precio_actual(symbol):
+    return float(client.get_symbol_ticker(symbol=symbol)["price"])
 
 def obtener_saldos():
     cuenta = client.get_account()
-    saldo_btc = float(next(asset["free"] for asset in cuenta["balances"] if asset["asset"] == "BTC"))
-    saldo_usdt = float(next(asset["free"] for asset in cuenta["balances"] if asset["asset"] == "USDT"))
-    return saldo_btc, saldo_usdt
+    saldos = {b['asset']: float(b['free']) for b in cuenta['balances']}
+    return saldos
 
 def get_step_size(symbol):
     info = client.get_symbol_info(symbol)
@@ -67,113 +62,111 @@ def get_step_size(symbol):
 def ajustar_cantidad(cantidad, step_size):
     return round(cantidad - (cantidad % step_size), 6)
 
-def calcular_cantidad_a_comprar(precio, saldo_usdt, step_size):
+def calcular_cantidad_a_comprar(symbol, saldo_usdt):
+    precio = obtener_precio_actual(symbol)
+    step_size = get_step_size(symbol)
     cantidad_usdt = saldo_usdt * PORCENTAJE_CAPITAL
-    cantidad_btc = cantidad_usdt / precio
-    return ajustar_cantidad(cantidad_btc, step_size)
+    cantidad = cantidad_usdt / precio
+    return ajustar_cantidad(cantidad, step_size)
 
-def comprar_btc(cantidad):
+def comprar(symbol, cantidad):
     try:
-        orden = client.order_market_buy(symbol=SYMBOL, quantity=cantidad)
-        return orden
+        return client.order_market_buy(symbol=symbol, quantity=cantidad)
     except BinanceAPIException as e:
-        logging.error(f"Error en compra: {e}")
-        send_telegram_message(f"❌ Error en compra: {e}")
+        logging.error(f"Compra {symbol} - {e}")
+        send_telegram_message(f"❌ Error al comprar {symbol}: {e}")
         return None
 
-def vender_btc(cantidad):
+def vender(symbol, cantidad):
     try:
-        orden = client.order_market_sell(symbol=SYMBOL, quantity=cantidad)
-        return orden
+        return client.order_market_sell(symbol=symbol, quantity=cantidad)
     except BinanceAPIException as e:
-        logging.error(f"Error en venta: {e}")
-        send_telegram_message(f"❌ Error en venta: {e}")
+        logging.error(f"Venta {symbol} - {e}")
+        send_telegram_message(f"❌ Error al vender {symbol}: {e}")
         return None
+
+def obtener_precio_usdt_eur():
+    try:
+        ticker = client.get_symbol_ticker(symbol="EURUSDT")
+        return 1 / float(ticker["price"])
+    except:
+        return 0.92  # Valor estimado en caso de error
 
 # ============ BUCLE PRINCIPAL ==============
 
-precio_entrada = None
-step_size = get_step_size(SYMBOL)
+precios_entrada = {}
 
 while True:
     try:
-        precio_actual = obtener_precio_actual()
-        saldo_btc, saldo_usdt = obtener_saldos()
+        saldos = obtener_saldos()
+        saldo_usdt = saldos.get("USDT", 0)
+        saldo_total_usdt = saldo_usdt
+        eur_rate = obtener_precio_usdt_eur()
 
-        print(f"\n📊 Precio actual {SYMBOL}: {precio_actual}")
-        print(f"Saldo BTC: {saldo_btc}")
-        print(f"Saldo USDT: {saldo_usdt}")
+        for symbol in SYMBOLS:
+            base_asset = symbol.replace("USDT", "")
+            saldo_base = saldos.get(base_asset, 0)
+            precio_actual = obtener_precio_actual(symbol)
+            step_size = get_step_size(symbol)
 
-        if saldo_btc > 0 and precio_entrada:
-            variacion = (precio_actual - precio_entrada) / precio_entrada
+            if saldo_base > 0:
+                precio_entrada = precios_entrada.get(symbol)
+                ganancia_pct = (precio_actual - precio_entrada) / precio_entrada if precio_entrada else 0
 
-            if variacion >= TAKE_PROFIT_PORCENTAJE:
-                print("🎯 Condición de TAKE PROFIT alcanzada. Vendiendo...")
-            elif variacion <= -STOP_LOSS_PORCENTAJE:
-                print("🔻 Condición de STOP LOSS alcanzada. Vendiendo...")
-            else:
-                print("📉 Esperando condiciones de venta...")
-                time.sleep(INTERVALO)
-                continue
+                if ganancia_pct >= TAKE_PROFIT_PCT or ganancia_pct <= -STOP_LOSS_PCT:
+                    cantidad_vender = ajustar_cantidad(saldo_base, step_size)
+                    orden = vender(symbol, cantidad_vender)
+                    if orden:
+                        precio_salida = float(orden['fills'][0]['price'])
+                        cantidad = float(orden['executedQty'])
+                        recibido = float(orden['cummulativeQuoteQty'])
+                        ganancia = round((precio_salida - precio_entrada) * cantidad, 2)
 
-            cantidad_vender = ajustar_cantidad(saldo_btc * PORCENTAJE_CAPITAL, step_size)
-            if cantidad_vender < step_size:
-                print("⚠️ Cantidad a vender demasiado pequeña.")
-                continue
+                        mensaje = (
+                            f"✅ <b>VENTA DE {symbol}</b>\n"
+                            f" - Cantidad: {cantidad:.6f} {base_asset}\n"
+                            f" - Precio: {precio_salida:.2f} USDT\n"
+                            f" - Total: {recibido:.2f} USDT\n"
+                            f" - Ganancia: <b>{ganancia} USDT</b>"
+                        )
+                        send_telegram_message(mensaje)
+                        precios_entrada[symbol] = None
+                        saldo_total_usdt += recibido
 
-            orden_venta = vender_btc(cantidad_vender)
-            if orden_venta:
-                precio_salida = float(orden_venta['fills'][0]['price'])
-                cantidad_vendida = float(orden_venta['executedQty'])
-                total_recibido = float(orden_venta['cummulativeQuoteQty'])
-                ganancia = (precio_salida - precio_entrada) * cantidad_vendida
-                ganancia = round(ganancia, 2)
+            elif saldo_usdt > 10:
+                cantidad = calcular_cantidad_a_comprar(symbol, saldo_usdt)
+                orden = comprar(symbol, cantidad)
+                if orden:
+                    precio = float(orden['fills'][0]['price'])
+                    cantidad_comprada = float(orden['executedQty'])
+                    total_invertido = float(orden['cummulativeQuoteQty'])
 
-                mensaje = (
-                    f"✅ <b>VENTA REALIZADA</b>:\n\n"
-                    f" - Símbolo: {SYMBOL}\n"
-                    f" - Precio entrada: {precio_entrada:.2f} USDT\n"
-                    f" - Precio venta: {precio_salida:.2f} USDT\n"
-                    f" - Cantidad vendida: {cantidad_vendida:.8f} BTC\n"
-                    f" - Total recibido: {total_recibido:.2f} USDT\n"
-                    f" - Resultado: <b>{ganancia} USDT</b>"
-                )
-                send_telegram_message(mensaje)
-                precio_entrada = None
+                    precios_entrada[symbol] = precio
+                    saldo_total_usdt -= total_invertido
 
-        elif saldo_usdt > 10:
-            print("🛒 Intentando comprar BTC...")
-            cantidad_btc = calcular_cantidad_a_comprar(precio_actual, saldo_usdt, step_size)
+                    mensaje = (
+                        f"✅ <b>COMPRA DE {symbol}</b>\n"
+                        f" - Cantidad: {cantidad_comprada:.6f} {base_asset}\n"
+                        f" - Precio: {precio:.2f} USDT\n"
+                        f" - Total: {total_invertido:.2f} USDT"
+                    )
+                    send_telegram_message(mensaje)
 
-            if cantidad_btc < step_size:
-                print("⚠️ Cantidad a comprar demasiado pequeña.")
-                continue
+        saldo_eur = saldo_total_usdt * eur_rate
+        resumen = (
+            f"💼 <b>RESUMEN DE CUENTA</b>\n"
+            f" - Total estimado: {saldo_total_usdt:.2f} USDT / {saldo_eur:.2f} EUR"
+        )
+        send_telegram_message(resumen)
 
-            orden_compra = comprar_btc(cantidad_btc)
-            if orden_compra:
-                precio_entrada = float(orden_compra['fills'][0]['price'])
-                cantidad_comprada = float(orden_compra['executedQty'])
-                total_usado = float(orden_compra['cummulativeQuoteQty'])
-
-                mensaje = (
-                    f"✅ <b>COMPRA REALIZADA</b>:\n\n"
-                    f" - Símbolo: {SYMBOL}\n"
-                    f" - Precio compra: {precio_entrada:.2f} USDT\n"
-                    f" - Cantidad comprada: {cantidad_comprada:.8f} BTC\n"
-                    f" - Total invertido: {total_usado:.2f} USDT"
-                )
-                send_telegram_message(mensaje)
-
-        else:
-            print("❗ No hay fondos suficientes para operar.")
-
-        print(f"\n⏳ Esperando {INTERVALO // 60} minutos...\n")
+        print("⏳ Esperando próximo ciclo...\n")
         time.sleep(INTERVALO)
 
     except Exception as e:
         logging.error(f"Error general: {e}")
         send_telegram_message(f"❌ Error general: {e}")
         time.sleep(INTERVALO)
+
 
 
 
