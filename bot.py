@@ -9,16 +9,17 @@ from statistics import mean
 
 # Para cálculos de indicadores
 try:
-    import pandas_ta as ta
-    import pandas as pd
-except ImportError:
-    # En un entorno de producción, aquí podrías considerar salir o manejar la degradación.
-    print("❌ ADVERTENCIA: pandas_ta y/o pandas no están instalados. Algunos indicadores avanzados no funcionarán.")
-    print("Por favor, instala: pip install pandas pandas_ta")
-    # Para asegurar que el script no falle si no están instalados en el entorno de prueba.
-    # En un despliegue real, deberías garantizar que estas dependencias estén presentes.
-    pd = None
-    ta = None
+    import pandas as pd # Importa pandas primero
+    import pandas_ta as ta # Luego pandas_ta, que depende de pandas
+except ImportError as e:
+    # Si la importación falla, loguea el error y termina la ejecución.
+    # Esto asegura que el bot no intente operar sin sus indicadores clave.
+    logging.error(f"❌ ERROR CRÍTICO: No se pudieron importar las librerías de trading (pandas/pandas_ta). "
+                  f"Asegúrate de que estén en requirements.txt y el despliegue fue exitoso. Error: {e}")
+    print(f"❌ ERROR CRÍTICO: No se pudieron importar las librerías de trading (pandas/pandas_ta). "
+          f"Por favor, instala: pip install pandas pandas_ta. Error: {e}")
+    # Es recomendable salir si las dependencias clave no están disponibles
+    exit(1) # Sale del programa con un código de error
 
 # =================== CONFIGURACIÓN ===================
 
