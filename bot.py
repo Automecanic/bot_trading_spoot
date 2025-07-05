@@ -1,346 +1,452 @@
-import os
-import time
-import logging
-import requests
-from binance.client import Client
-from binance.exceptions import BinanceAPIException
-from binance.enums import *
-from statistics import mean
+import os # Importa el módulo 'os' para interactuar con el sistema operativo (ej. variables de entorno).
+import time # Importa el módulo 'time' para funciones relacionadas con el tiempo (ej. pausas).
+import logging # Importa el módulo 'logging' para registrar eventos y mensajes del bot.
+import requests # Importa el módulo 'requests' para hacer peticiones HTTP (ej. a la API de Telegram).
+from binance.client import Client # Importa la clase 'Client' del paquete python-binance para interactuar con la API de Binance.
+from binance.exceptions import BinanceAPIException # Importa excepciones específicas de la API de Binance para un mejor manejo de errores.
+from binance.enums import * # Importa todas las constantes de enumeración de Binance (ej. KLINE_INTERVAL_1MINUTE, SIDE_BUY).
+from statistics import mean # Importa la función 'mean' para calcular el promedio (aunque ahora usamos EMA de pandas_ta).
 
-# Para cálculos de indicadores
+# --- LIBRERÍAS PARA CÁLCULOS DE INDICADORES TÉCNICOS ---
+# Este bloque intenta importar pandas y pandas_ta, que son cruciales para el análisis técnico.
+# Si la importación falla, se considera un error crítico y el bot se detiene.
 try:
-    import pandas as pd # Importa pandas primero
-    import pandas_ta as ta # Luego pandas_ta, que depende de pandas
-except ImportError as e:
-    # Si la importación falla, loguea el error y termina la ejecución.
-    # Esto asegura que el bot no intente operar sin sus indicadores clave.
+    import pandas as pd # Importa 'pandas' para manipulación de datos, especialmente DataFrames.
+    import pandas_ta as ta # Importa 'pandas_ta' para el cálculo de indicadores técnicos (EMA, RSI).
+except ImportError as e: # Captura el error si las librerías no se pueden importar.
+    # Registra un mensaje de error crítico en el sistema de logging.
     logging.error(f"❌ ERROR CRÍTICO: No se pudieron importar las librerías de trading (pandas/pandas_ta). "
                   f"Asegúrate de que estén en requirements.txt y el despliegue fue exitoso. Error: {e}")
+    # Imprime el mismo mensaje de error en la consola para visibilidad inmediata.
     print(f"❌ ERROR CRÍTICO: No se pudieron importar las librerías de trading (pandas/pandas_ta). "
           f"Por favor, instala: pip install pandas pandas_ta. Error: {e}")
-    # Es recomendable salir si las dependencias clave no están disponibles
-    exit(1) # Sale del programa con un código de error
+    exit(1) # Termina la ejecución del script con un código de error (1), ya que el bot no puede funcionar sin ellas.
 
-# =================== CONFIGURACIÓN ===================
+# --- CONFIGURACIÓN DEL BOT ---
+# Estas variables son fundamentales para el funcionamiento del bot y deben ser configuradas.
+# Se recomienda encarecidamente cargarlas como variables de entorno por seguridad.
 
-API_KEY = os.getenv("BINANCE_API_KEY")       # Tu clave API de Binance
-API_SECRET = os.getenv("BINANCE_API_SECRET") # Tu secreto API de Binance
+API_KEY = os.getenv("BINANCE_API_KEY")       # Obtiene la clave API de Binance de las variables de entorno.
+API_SECRET = os.getenv("BINANCE_API_SECRET") # Obtiene el secreto API de Binance de las variables de entorno.
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")       # Token de tu bot de Telegram
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")       # ID de tu chat de Telegram
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")       # Obtiene el token de tu bot de Telegram de las variables de entorno.
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")       # Obtiene el ID del chat/grupo de Telegram de las variables de entorno.
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]   # Criptomonedas a operar
-INTERVALO = 300     # Espera entre ciclos (en segundos)
-PORCENTAJE_CAPITAL = 0.1   # % del capital a invertir en cada operación
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]   # Lista de pares de trading (símbolos) que el bot monitoreará y operará.
+                                                                    # Puedes modificar esta lista según los activos que te interesen.
+INTERVALO = 300     # Define el tiempo de espera entre cada ciclo completo de ejecución del bot (en segundos).
+                    # 300 segundos equivalen a 5 minutos.
 
-TAKE_PROFIT_PORCENTAJE = 0.03   # 3% de ganancia (Objetivo inicial)
-STOP_LOSS_PORCENTAJE = 0.02     # 2% de pérdida (Stop Loss fijo inicial)
-TRAILING_STOP_PORCENTAJE = 0.015 # 1.5% de trailing (El TSL seguirá el precio con este % de distancia)
+# --- PARÁMETROS DE GESTIÓN DE RIESGO ---
+# Estos valores determinan la estrategia de gestión de capital y los puntos de salida de las operaciones.
 
-# Parámetros para indicadores técnicos
-EMA_PERIODO = 10    # Período para la Media Móvil Exponencial (EMA)
-RSI_PERIODO = 14    # Período para el Índice de Fuerza Relativa (RSI)
-RSI_UMBRAL_SOBRECOMPRA = 70 # Umbral superior del RSI para considerar sobrecompra (evitar compras)
+RIESGO_POR_OPERACION_PORCENTAJE = 0.01 # Porcentaje del capital total que estás dispuesto a arriesgar en una única operación.
+                                      # Si tu Stop Loss se activa, la pérdida no excederá este porcentaje de tu capital total. (1% en este caso).
 
-# =================== INICIALIZACIÓN ===================
+TAKE_PROFIT_PORCENTAJE = 0.03   # Porcentaje de ganancia sobre el precio de entrada que activará una venta (Take Profit). (3%).
+STOP_LOSS_PORCENTAJE = 0.02     # Porcentaje de pérdida sobre el precio de entrada que activará una venta (Stop Loss fijo). (2%).
+TRAILING_STOP_PORCENTAJE = 0.015 # Porcentaje de retroceso desde el precio máximo alcanzado que activará una venta (Trailing Stop Loss). (1.5%).
+                                 # Este SL se mueve con el precio a medida que este sube, protegiendo ganancias.
 
+# --- PARÁMETROS DE INDICADORES TÉCNICOS ---
+# Configuración para el cálculo de la Media Móvil Exponencial (EMA) y el Índice de Fuerza Relativa (RSI).
+
+EMA_PERIODO = 10    # El número de períodos (velas) utilizados para calcular la EMA. (Ej. 10 minutos si usas velas de 1 minuto).
+RSI_PERIODO = 14    # El número de períodos (velas) utilizados para calcular el RSI. (Ej. 14 minutos).
+RSI_UMBRAL_SOBRECOMPRA = 70 # Umbral superior del RSI. Si el RSI está por encima de este valor, se considera que el activo está "sobrecomprado".
+                            # El bot evitará abrir nuevas posiciones si el RSI está por encima de este umbral.
+
+# --- INICIALIZACIÓN DEL CLIENTE DE BINANCE Y CONFIGURACIÓN DEL LOGGING ---
+
+# Crea una instancia del cliente de Binance usando las claves API.
 client = Client(API_KEY, API_SECRET)
-client.API_URL = 'https://testnet.binance.vision/api'   # Usa la testnet de Binance
+# Configura la URL de la API de Binance para usar la Testnet (entorno de prueba con dinero ficticio).
+# Esto es CRUCIAL para evitar operar con dinero real durante el desarrollo y las pruebas.
+client.API_URL = 'https://testnet.binance.vision/api'
 
+# Configura el sistema de registro (logging) del bot.
 logging.basicConfig(
-    filename='trading_bot.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    filename='trading_bot.log', # Especifica el nombre del archivo donde se guardarán los mensajes de log.
+    level=logging.INFO,         # Establece el nivel mínimo de mensajes a registrar (INFO, WARNING, ERROR, DEBUG, etc.).
+    format='%(asctime)s - %(levelname)s - %(message)s' # Define el formato de cada línea de log: fecha/hora - nivel - mensaje.
 )
 
-# =================== FUNCIONES AUXILIARES ===================
+# --- FUNCIONES AUXILIARES ---
+# Colección de funciones que encapsulan operaciones comunes y reutilizables.
 
 def send_telegram_message(message):
-    """Envía un mensaje a Telegram."""
+    """
+    Envía un mensaje de texto al chat de Telegram configurado.
+    El mensaje puede contener formato HTML básico.
+    """
+    # Verifica que el token del bot y el ID del chat estén configurados.
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ TOKEN o CHAT_ID no configurados.")
-        return
+        print("⚠️ TOKEN o CHAT_ID de Telegram no configurados. No se pueden enviar mensajes de notificación.")
+        return # Sale de la función si la configuración es incompleta.
 
+    # Construye la URL de la API de Telegram para enviar mensajes.
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    # Define el payload (datos a enviar) con el ID del chat, el texto y el modo de parseo (HTML).
     payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
 
     try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print(f"❌ Error enviando mensaje Telegram: {e}")
+        requests.post(url, json=payload) # Envía la petición POST a la API de Telegram.
+    except Exception as e: # Captura cualquier error que ocurra durante el envío.
+        print(f"❌ Error enviando mensaje Telegram: {e}") # Imprime el error en consola.
+        logging.error(f"❌ Error enviando mensaje Telegram: {e}") # Registra el error en el log.
 
 def obtener_precio_actual(symbol):
-    """Obtiene el precio actual de mercado de una cripto."""
-    ticker = client.get_symbol_ticker(symbol=symbol)
-    return float(ticker["price"])
+    """
+    Obtiene el último precio de mercado para un par de trading (símbolo) de Binance.
+    """
+    ticker = client.get_symbol_ticker(symbol=symbol) # Realiza una petición para obtener el ticker del símbolo.
+    return float(ticker["price"]) # Convierte el precio a flotante y lo retorna.
 
 def obtener_saldo_moneda(moneda):
-    """Obtiene el saldo disponible de una moneda específica."""
-    cuenta = client.get_account()
-    for asset in cuenta['balances']:
-        if asset['asset'] == moneda:
-            return float(asset['free'])
-    return 0.0
+    """
+    Obtiene el saldo disponible ('free' balance) de una moneda específica en la cuenta de Binance.
+    """
+    cuenta = client.get_account() # Obtiene el estado actual de la cuenta del usuario.
+    for asset in cuenta['balances']: # Itera sobre la lista de activos en la cuenta.
+        if asset['asset'] == moneda: # Si encuentra la moneda deseada.
+            return float(asset['free']) # Retorna el saldo disponible para operar.
+    return 0.0 # Si la moneda no se encuentra en el balance, retorna 0.0.
 
 def get_step_size(symbol):
-    """Obtiene el tamaño de paso permitido por Binance para el símbolo."""
-    info = client.get_symbol_info(symbol)
-    for f in info['filters']:
-        if f['filterType'] == 'LOT_SIZE':
-            return float(f['stepSize'])
-    return 0.000001
+    """
+    Obtiene el 'step size' (tamaño de paso mínimo) para las cantidades de un símbolo en Binance.
+    Binance requiere que las cantidades de órdenes sean múltiplos de este valor para ser válidas.
+    """
+    info = client.get_symbol_info(symbol) # Obtiene información detallada sobre el símbolo.
+    for f in info['filters']: # Itera sobre los filtros de trading del símbolo.
+        if f['filterType'] == 'LOT_SIZE': # Busca el filtro que define el tamaño del lote.
+            return float(f['stepSize'])   # Retorna el 'stepSize' como flotante.
+    return 0.000001 # Retorna un valor por defecto muy pequeño si el filtro no se encuentra (caso inusual).
 
 def ajustar_cantidad(cantidad, step_size):
-    """Ajusta la cantidad al step_size para evitar errores de Binance."""
+    """
+    Ajusta una cantidad de criptomoneda para que sea un múltiplo exacto del 'step_size' del símbolo.
+    Esto es crucial para evitar errores 'INVALID_QUANTITY' de la API de Binance.
+    """
+    # Resta el remanente de la división para alinear la cantidad al step_size.
+    # Se redondea a 6 decimales para mantener la precisión y evitar problemas de coma flotante.
     return round(cantidad - (cantidad % step_size), 6)
 
-def calcular_cantidad_a_comprar(symbol, precio, saldo_usdt):
-    """Calcula cuántas unidades comprar de una cripto según el capital disponible."""
-    cantidad_usdt = saldo_usdt * PORCENTAJE_CAPITAL
-    if precio == 0: return 0.0 # Evitar división por cero
-    cantidad = cantidad_usdt / precio
+def calcular_cantidad_a_comprar(capital_total, precio_actual, stop_loss_porcentaje, symbol):
+    """
+    Calcula la cantidad de criptomoneda a comprar basándose en el porcentaje de riesgo por operación
+    y la distancia al Stop Loss. Esta es la esencia de la gestión de capital basada en riesgo.
+    """
+    # Validaciones iniciales para evitar divisiones por cero o cálculos inválidos.
+    if precio_actual == 0 or stop_loss_porcentaje == 0:
+        logging.warning(f"⚠️ Parámetros inválidos para calcular cantidad de compra en {symbol}. Precio actual o SL porcentaje es cero.")
+        return 0.0
+
+    # Calcula el precio en el que se activaría el Stop Loss.
+    stop_loss_precio = precio_actual * (1 - stop_loss_porcentaje)
+
+    # Calcula la diferencia entre el precio actual y el precio del Stop Loss.
+    # Esta es la cantidad de USDT que se perdería por CADA unidad de la cripto si el SL se activa.
+    distancia_stop_loss = precio_actual - stop_loss_precio
+    
+    # Si la distancia al Stop Loss es cero o negativa (lo que no debería ocurrir con un SL_PORCENTAJE positivo),
+    # se retorna 0 para evitar divisiones por cero y errores.
+    if distancia_stop_loss <= 0:
+        logging.warning(f"⚠️ Distancia al Stop Loss no válida o cero para {symbol}. Distancia: {distancia_stop_loss}. No se puede calcular la cantidad.")
+        return 0.0
+
+    # Calcula el monto máximo de USDT que el bot está dispuesto a perder en esta operación individual.
+    # Esto se basa en el capital total disponible y el porcentaje de riesgo definido.
+    riesgo_max_usd = capital_total * RIESGO_POR_OPERACION_PORCENTAJE
+
+    # Calcula la cantidad de unidades de la cripto a comprar.
+    # Se divide el riesgo máximo aceptable por operación entre la pérdida por unidad.
+    cantidad = riesgo_max_usd / distancia_stop_loss
+    
+    # Obtiene el step_size para el símbolo actual y ajusta la cantidad calculada.
     step = get_step_size(symbol)
     return ajustar_cantidad(cantidad, step)
 
 def comprar(symbol, cantidad):
-    """Ejecuta una orden de compra de mercado."""
+    """
+    Envía una orden de compra de mercado a Binance para el símbolo y la cantidad especificados.
+    """
+    # Verifica que la cantidad sea positiva.
     if cantidad <= 0:
         logging.warning(f"⚠️ Intento de compra de {symbol} con cantidad no positiva: {cantidad}")
-        print(f"⚠️ Intento de compra de {symbol} con cantidad no positiva: {cantidad}")
         return None
     try:
-        logging.info(f"✅ Intentando comprar {cantidad} de {symbol}")
-        order = client.order_market_buy(symbol=symbol, quantity=cantidad)
-        logging.info(f"✅ Compra de {symbol} exitosa: {order}")
-        print(f"✅ Compra de {symbol} exitosa: {order}")
-        return order
-    except BinanceAPIException as e:
-        logging.error(f"❌ Error en compra de {symbol}: {e}")
-        print(f"❌ Error en compra de {symbol}: {e}")
-        send_telegram_message(f"❌ Error en compra de {symbol}: {e}")
-        return None
-    except Exception as e:
+        logging.info(f"✅ Intentando comprar {cantidad} de {symbol}") # Registra el intento de compra.
+        order = client.order_market_buy(symbol=symbol, quantity=cantidad) # Ejecuta la orden de compra.
+        logging.info(f"✅ Compra de {symbol} exitosa: {order}") # Registra el éxito de la orden.
+        return order # Retorna el objeto de la orden si es exitosa.
+    except BinanceAPIException as e: # Captura errores específicos de la API de Binance.
+        logging.error(f"❌ Error en compra de {symbol} (Binance API): {e}") # Registra el error detallado.
+        send_telegram_message(f"❌ Error en compra de {symbol}: {e}") # Notifica por Telegram.
+        return None # Retorna None si la compra falla.
+    except Exception as e: # Captura cualquier otro tipo de error inesperado.
         logging.error(f"❌ Error inesperado en compra de {symbol}: {e}")
-        print(f"❌ Error inesperado en compra de {symbol}: {e}")
         send_telegram_message(f"❌ Error inesperado en compra de {symbol}: {e}")
         return None
 
 def vender(symbol, cantidad):
-    """Ejecuta una orden de venta de mercado."""
+    """
+    Envía una orden de venta de mercado a Binance para el símbolo y la cantidad especificados.
+    """
+    # Verifica que la cantidad sea positiva.
     if cantidad <= 0:
         logging.warning(f"⚠️ Intento de venta de {symbol} con cantidad no positiva: {cantidad}")
-        print(f"⚠️ Intento de venta de {symbol} con cantidad no positiva: {cantidad}")
         return None
     try:
-        logging.info(f"✅ Intentando vender {cantidad} de {symbol}")
-        order = client.order_market_sell(symbol=symbol, quantity=cantidad)
-        logging.info(f"✅ Venta de {symbol} exitosa: {order}")
-        print(f"✅ Venta de {symbol} exitosa: {order}")
-        return order
-    except BinanceAPIException as e:
-        logging.error(f"❌ Error en venta de {symbol}: {e}")
-        print(f"❌ Error en venta de {symbol}: {e}")
+        logging.info(f"✅ Intentando vender {cantidad} de {symbol}") # Registra el intento de venta.
+        order = client.order_market_sell(symbol=symbol, quantity=cantidad) # Ejecuta la orden de venta.
+        logging.info(f"✅ Venta de {symbol} exitosa: {order}") # Registra el éxito de la orden.
+        return order # Retorna el objeto de la orden si es exitosa.
+    except BinanceAPIException as e: # Captura errores específicos de la API de Binance.
+        logging.error(f"❌ Error en venta de {symbol} (Binance API): {e}")
         send_telegram_message(f"❌ Error en venta de {symbol}: {e}")
         return None
-    except Exception as e:
+    except Exception as e: # Captura cualquier otro tipo de error inesperado.
         logging.error(f"❌ Error inesperado en venta de {symbol}: {e}")
-        print(f"❌ Error inesperado en venta de {symbol}: {e}")
         send_telegram_message(f"❌ Error inesperado en venta de {symbol}: {e}")
         return None
 
 def obtener_datos_ohlcv(symbol, interval, limit):
-    """Obtiene datos históricos OHLCV (Open, High, Low, Close, Volume)."""
-    if pd is None: # Comprobar si pandas está disponible
-        logging.error("Pandas no está instalado. No se pueden obtener datos OHLCV.")
-        return pd.DataFrame() # Retornar DataFrame vacío si pandas no está
-        
+    """
+    Obtiene datos históricos de velas (Open, High, Low, Close, Volume) de Binance.
+    Estos datos son la base para calcular los indicadores técnicos.
+    """
+    # Realiza una petición para obtener los datos de velas (kline data) para el símbolo, intervalo y límite especificados.
     klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
+    # Convierte la lista de datos de velas a un DataFrame de Pandas.
+    # Se especifican los nombres de las columnas para mayor claridad.
     df = pd.DataFrame(klines, columns=['open_time', 'open', 'high', 'low', 'close', 'volume',
                                        'close_time', 'quote_asset_volume', 'number_of_trades',
                                        'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'])
-    df['close'] = pd.to_numeric(df['close'])
-    return df
+    df['close'] = pd.to_numeric(df['close']) # Convierte la columna 'close' (precio de cierre) a un tipo numérico flotante.
+    return df # Retorna el DataFrame con los datos históricos.
 
 def calcular_ema_rsi(symbol, ema_period, rsi_period):
-    """Calcula la EMA y el RSI para un símbolo."""
-    if ta is None or pd is None: # Comprobar si pandas_ta y pandas están disponibles
-        logging.error("Pandas_ta o Pandas no están instalados. No se pueden calcular EMA/RSI.")
-        return None, None
-
+    """
+    Calcula la Media Móvil Exponencial (EMA) y el Índice de Fuerza Relativa (RSI) para un símbolo.
+    Requiere un DataFrame de Pandas con datos de precios de cierre.
+    """
+    # Obtiene un número suficiente de velas para asegurar que los cálculos de EMA y RSI sean precisos.
+    # El 'max(ema_period, rsi_period) + 50' asegura un búfer de datos.
     df = obtener_datos_ohlcv(symbol, KLINE_INTERVAL_1MINUTE, max(ema_period, rsi_period) + 50)
     
-    if df.empty or len(df) < max(ema_period, rsi_period) + 1: # Asegurarse de tener suficientes datos para el cálculo
-        logging.warning(f"No hay suficientes datos para calcular EMA/RSI para {symbol}.")
-        return None, None
+    # Verifica si se obtuvieron datos o si hay suficientes datos para los cálculos.
+    if df.empty or len(df) < max(ema_period, rsi_period) + 1: 
+        logging.warning(f"No hay suficientes datos históricos para calcular EMA/RSI para {symbol}. Se necesitan al menos {max(ema_period, rsi_period) + 1} velas.")
+        return None, None # Retorna None si no hay datos suficientes, indicando que no se pudo calcular.
 
-    # Calcular EMA
-    df['EMA'] = ta.ema(df['close'], length=ema_period)
-    
-    # Calcular RSI
-    df['RSI'] = ta.rsi(df['close'], length=rsi_period)
+    df['EMA'] = ta.ema(df['close'], length=ema_period) # Calcula la EMA utilizando la columna 'close' del DataFrame.
+    df['RSI'] = ta.rsi(df['close'], length=rsi_period) # Calcula el RSI utilizando la columna 'close' del DataFrame.
 
-    # Devolver el último valor de EMA y RSI
+    # Retorna el último valor calculado de EMA y RSI (corresponden a la vela más reciente).
     return df['EMA'].iloc[-1], df['RSI'].iloc[-1]
 
 def obtener_precio_eur():
-    """Convierte el precio de USDT a EUR usando el par EURUSDT."""
+    """
+    Obtiene el precio de conversión de USDT a EUR utilizando el par EURUSDT en Binance.
+    Esto es necesario para mostrar los saldos y montos invertidos en euros.
+    """
     try:
-        ticker = client.get_symbol_ticker(symbol="EURUSDT")
-        return 1 / float(ticker["price"])
-    except Exception as e:
-        logging.warning(f"⚠️ No se pudo obtener EURUSDT: {e}")
-        print(f"⚠️ No se pudo obtener EURUSDT: {e}")
-
-        return None
+        ticker = client.get_symbol_ticker(symbol="EURUSDT") # Intenta obtener el precio del par EURUSDT.
+        return 1 / float(ticker["price"]) # Retorna la relación USDT/EUR (cuántos EUR por 1 USDT).
+    except Exception as e: # Captura cualquier error si el par no está disponible o la petición falla.
+        logging.warning(f"⚠️ No se pudo obtener el precio EURUSDT: {e}. Los saldos en EUR no se mostrarán correctamente.")
+        return None # Retorna None si no se puede obtener la tasa de conversión.
 
 def obtener_saldos_formateados():
-    """Obtiene y formatea los saldos actuales en USDT y EUR."""
-    saldo_usdt = obtener_saldo_moneda("USDT")
-    eur_usdt = obtener_precio_eur()
-    saldo_eur = saldo_usdt * eur_usdt if eur_usdt else 0
+    """
+    Obtiene el saldo actual de USDT y lo convierte a EUR para mostrar un resumen de capital.
+    """
+    saldo_usdt = obtener_saldo_moneda("USDT") # Obtiene el saldo disponible de USDT.
+    eur_usdt = obtener_precio_eur() # Obtiene la tasa de conversión de USDT a EUR.
+    saldo_eur = saldo_usdt * eur_usdt if eur_usdt else 0 # Calcula el saldo en EUR; si no hay tasa, es 0.
 
+    # Retorna una cadena de texto formateada en HTML para el mensaje de Telegram.
     return (
         f"💰 <b>Saldos Actuales:</b>\n"
         f" - USDT: {saldo_usdt:.2f}\n"
         f" - EUR: {saldo_eur:.2f}"
     )
 
-# =================== ESTRATEGIA PRINCIPAL ===================
+# --- ESTRATEGIA PRINCIPAL DEL BOT ---
+# El corazón del bot, donde se implementa la lógica de trading y el ciclo de ejecución.
 
-# Diccionario para almacenar el estado de cada posición:
-# { 'SYMBOL': { 'precio_compra': float, 'cantidad_base': float, 'max_precio_alcanzado': float } }
+# Diccionario para almacenar el estado de las posiciones abiertas por símbolo.
+# Cada entrada contiene el precio de compra, la cantidad de la cripto, y el precio máximo alcanzado
+# para el cálculo del Trailing Stop Loss.
+# Ejemplo: { 'BTCUSDT': { 'precio_compra': 30000.50, 'cantidad_base': 0.0123, 'max_precio_alcanzado': 30500.00 } }
 posiciones_abiertas = {} 
 
-while True:
-    start_time_cycle = time.time()
+while True: # El bucle principal del bot, se ejecuta indefinidamente para monitorear el mercado.
+    start_time_cycle = time.time() # Marca el inicio del ciclo actual para calcular su duración.
     try:
-        general_message = "" 
+        general_message = "" # Inicializa una cadena para acumular todos los mensajes de Telegram de este ciclo.
 
+        # Itera sobre cada símbolo configurado para el trading.
         for symbol in SYMBOLS:
-            base = symbol.replace("USDT", "") 
+            base = symbol.replace("USDT", "") # Extrae la moneda base (ej., "BTC" de "BTCUSDT").
             
-            # Necesitamos obtener saldo_base aquí, ya que puede cambiar después de una venta.
+            # Obtiene el saldo de la moneda base. Importante para las verificaciones de venta.
             saldo_base = obtener_saldo_moneda(base) 
-            precio_actual = obtener_precio_actual(symbol)
+            precio_actual = obtener_precio_actual(symbol) # Obtiene el precio actual del mercado para el símbolo.
             
-            # Calcular EMA y RSI
+            # Calcula los valores de EMA y RSI para el símbolo.
             ema_valor, rsi_valor = calcular_ema_rsi(symbol, EMA_PERIODO, RSI_PERIODO)
 
+            # Si los indicadores no se pudieron calcular (ej. por falta de datos), se omite este símbolo y se pasa al siguiente.
             if ema_valor is None or rsi_valor is None:
-                logging.warning(f"⚠️ No se pudieron calcular EMA o RSI para {symbol}. Saltando este símbolo.")
-                continue
+                logging.warning(f"⚠️ No se pudieron calcular EMA o RSI para {symbol}. Saltando este símbolo en este ciclo.")
+                continue # Pasa a la siguiente iteración del bucle 'for'.
 
-            mensaje_simbolo = f"📊 <b>{symbol}</b>\nPrecio actual: {precio_actual:.2f} USDT\nEMA ({EMA_PERIODO}m): {ema_valor:.2f}\nRSI ({RSI_PERIODO}m): {rsi_valor:.2f}"
+            # Prepara el mensaje de estado inicial para el símbolo.
+            mensaje_simbolo = (
+                f"📊 <b>{symbol}</b>\n"
+                f"Precio actual: {precio_actual:.2f} USDT\n"
+                f"EMA ({EMA_PERIODO}m): {ema_valor:.2f}\n"
+                f"RSI ({RSI_PERIODO}m): {rsi_valor:.2f}"
+            )
 
-            # 📈 Condición de COMPRA (Precio > EMA Y RSI no sobrecomprado)
-            # Volvemos a obtener saldo_usdt aquí porque puede cambiar entre símbolos si se compra.
-            saldo_usdt = obtener_saldo_moneda("USDT")
-            if saldo_usdt > 10 and precio_actual > ema_valor and rsi_valor < RSI_UMBRAL_SOBRECOMPRA and symbol not in posiciones_abiertas:
-                cantidad = calcular_cantidad_a_comprar(symbol, precio_actual, saldo_usdt)
-                if cantidad > 0:
-                    orden = comprar(symbol, cantidad)
-                    if orden and 'fills' in orden and len(orden['fills']) > 0:
-                        precio_compra = float(orden['fills'][0]['price'])
-                        # Asegurarse de que la cantidad comprada sea el valor correcto del fill.
-                        cantidad_comprada_real = float(orden['fills'][0]['qty'])
+            # --- LÓGICA DE COMPRA ---
+            # Condiciones para abrir una nueva posición:
+            # 1. Saldo suficiente en USDT (más de 10 USDT para cubrir mínimos y comisiones).
+            # 2. El precio actual está por encima de la EMA (indica una tendencia alcista, señal de compra).
+            # 3. El RSI no está en zona de sobrecompra (evita comprar cuando el precio ya está muy alto).
+            # 4. No hay una posición abierta para este símbolo (evita abrir múltiples posiciones en el mismo activo).
+            saldo_usdt = obtener_saldo_moneda("USDT") # Actualiza el saldo de USDT en cada iteración del símbolo.
+            if (saldo_usdt > 10 and 
+                precio_actual > ema_valor and 
+                rsi_valor < RSI_UMBRAL_SOBRECOMPRA and 
+                symbol not in posiciones_abiertas):
+                
+                # Calcula la cantidad de criptomoneda a comprar utilizando la lógica de gestión de riesgo.
+                # Se pasa el saldo_usdt total, el precio actual y el porcentaje de Stop Loss.
+                cantidad = calcular_cantidad_a_comprar(saldo_usdt, precio_actual, STOP_LOSS_PORCENTAJE, symbol)
+                
+                if cantidad > 0: # Si la cantidad calculada es válida (mayor que cero).
+                    orden = comprar(symbol, cantidad) # Intenta ejecutar la orden de compra.
+                    if orden and 'fills' in orden and len(orden['fills']) > 0: # Si la orden se ejecutó y tiene detalles de fills.
+                        precio_compra = float(orden['fills'][0]['price']) # Obtiene el precio promedio de ejecución de la compra.
+                        cantidad_comprada_real = float(orden['fills'][0]['qty']) # Obtiene la cantidad exacta comprada.
+                        
+                        # Almacena los detalles de la nueva posición abierta en el diccionario 'posiciones_abiertas'.
                         posiciones_abiertas[symbol] = {
                             'precio_compra': precio_compra,
                             'cantidad_base': cantidad_comprada_real,
-                            'max_precio_alcanzado': precio_actual 
+                            'max_precio_alcanzado': precio_actual # Inicializa el precio máximo alcanzado con el precio de compra.
                         }
                         mensaje_simbolo += f"\n✅ COMPRA ejecutada a {precio_compra:.2f} USDT"
-                        mensaje_simbolo += f"\nCantidad comprada: {cantidad_comprada_real:.6f} {base}"
+                        
+                        # Calcula y añade la información sobre el capital invertido y el riesgo asumido en este trade.
+                        capital_invertido_usd = precio_compra * cantidad_comprada_real
+                        riesgo_max_trade_usd = saldo_usdt * RIESGO_POR_OPERACION_PORCENTAJE
+                        mensaje_simbolo += (
+                            f"\nCantidad comprada: {cantidad_comprada_real:.6f} {base}"
+                            f"\nInversión en este trade: {capital_invertido_usd:.2f} USDT"
+                            f"\nRiesgo Máx. Permitido por Trade: {riesgo_max_trade_usd:.2f} USDT"
+                        )
                     else:
-                         mensaje_simbolo += f"\n❌ COMPRA fallida para {symbol}."
+                         mensaje_simbolo += f"\n❌ COMPRA fallida para {symbol}." # Mensaje si la orden no se procesa correctamente.
                 else:
-                    mensaje_simbolo += f"\n⚠️ No hay suficiente capital o cantidad mínima para comprar {symbol}."
+                    mensaje_simbolo += f"\n⚠️ No hay suficiente capital o cantidad mínima para comprar {symbol} con el riesgo definido." # Mensaje si no se puede calcular una cantidad válida.
 
-            # 📉 Condición de VENTA (TP, SL o Trailing Stop Loss)
+            # --- LÓGICA DE VENTA (Take Profit, Stop Loss, Trailing Stop Loss) ---
+            # Se activa solo si ya existe una posición abierta para el símbolo.
             elif symbol in posiciones_abiertas:
-                posicion = posiciones_abiertas[symbol]
-                precio_compra = posicion['precio_compra']
-                cantidad_en_posicion = posicion['cantidad_base']
-                max_precio_alcanzado = posicion['max_precio_alcanzado']
+                posicion = posiciones_abiertas[symbol] # Obtiene los detalles de la posición abierta.
+                precio_compra = posicion['precio_compra'] # Precio al que se compró el activo.
+                cantidad_en_posicion = posicion['cantidad_base'] # Cantidad de la cripto que se posee.
+                max_precio_alcanzado = posicion['max_precio_alcanzado'] # El precio más alto que ha alcanzado el activo desde la compra.
 
-                # Actualizar el precio máximo alcanzado
+                # Actualiza el precio máximo alcanzado si el precio actual es un nuevo máximo.
                 if precio_actual > max_precio_alcanzado:
                     posiciones_abiertas[symbol]['max_precio_alcanzado'] = precio_actual
-                    max_precio_alcanzado = precio_actual # Actualizar variable local también
+                    max_precio_alcanzado = precio_actual # Actualiza la variable local para el ciclo actual.
 
-                # Niveles de venta
-                take_profit_nivel = precio_compra * (1 + TAKE_PROFIT_PORCENTAJE)
-                stop_loss_fijo_nivel = precio_compra * (1 - STOP_LOSS_PORCENTAJE)
-                
-                # Calcular Trailing Stop Loss
-                trailing_stop_nivel = max_precio_alcanzado * (1 - TRAILING_STOP_PORCENTAJE)
+                # Calcula los precios de activación para las condiciones de venta.
+                take_profit_nivel = precio_compra * (1 + TAKE_PROFIT_PORCENTAJE) # Nivel para Take Profit.
+                stop_loss_fijo_nivel = precio_compra * (1 - STOP_LOSS_PORCENTAJE) # Nivel para Stop Loss fijo.
+                trailing_stop_nivel = max_precio_alcanzado * (1 - TRAILING_STOP_PORCENTAJE) # Nivel para Trailing Stop Loss.
 
+                # --- Cálculo del Saldo Euros Invertidos (SEI) para la posición actual ---
+                eur_usdt_conversion_rate = obtener_precio_eur() # Obtiene la tasa de conversión USDT a EUR.
+                saldo_invertido_usdt = precio_compra * cantidad_en_posicion # Valor de la inversión inicial en USDT.
+                # Calcula el valor de la inversión inicial en EUR.
+                saldo_invertido_eur = saldo_invertido_usdt * eur_usdt_conversion_rate if eur_usdt_conversion_rate else 0
+
+                # Añade toda la información de la posición y los niveles de salida al mensaje.
                 mensaje_simbolo += (
                     f"\nPosición:\n Entrada: {precio_compra:.2f} | Actual: {precio_actual:.2f}\n"
                     f"TP: {take_profit_nivel:.2f} | SL Fijo: {stop_loss_fijo_nivel:.2f}\n"
-                    f"Max Alcanzado: {max_precio_alcanzado:.2f} | TSL: {trailing_stop_nivel:.2f}"
+                    f"Max Alcanzado: {max_precio_alcanzado:.2f} | TSL: {trailing_stop_nivel:.2f}\n"
+                    f"Saldo USDT Invertido (Entrada): {saldo_invertido_usdt:.2f}\n" # Muestra la inversión inicial en USDT.
+                    f"SEI: {saldo_invertido_eur:.2f}" # Muestra el Saldo Euros Invertidos (SEI).
                 )
 
-                vender_ahora = False
-                motivo_venta = ""
+                vender_ahora = False # Bandera para indicar si se debe realizar una venta.
+                motivo_venta = "" # Cadena para almacenar el motivo de la venta.
 
-                # Prioridad de venta: TP, luego SL Fijo, luego TSL
+                # Evalúa las condiciones de venta en orden de prioridad:
+                # 1. Si el precio actual alcanza o supera el Take Profit.
                 if precio_actual >= take_profit_nivel:
                     vender_ahora = True
                     motivo_venta = "TAKE PROFIT alcanzado"
+                # 2. Si el precio actual cae por debajo o iguala el Stop Loss fijo.
                 elif precio_actual <= stop_loss_fijo_nivel:
                     vender_ahora = True
                     motivo_venta = "STOP LOSS FIJO alcanzado"
+                # 3. Si el precio actual cae por debajo o iguala el Trailing Stop Loss, y estamos en ganancias (precio_actual > precio_compra).
+                # La condición 'precio_actual > precio_compra' asegura que el TSL protege ganancias, no acelera pérdidas iniciales.
                 elif (precio_actual <= trailing_stop_nivel and precio_actual > precio_compra): 
-                    # TSL solo si el precio actual es mayor al precio de compra (estamos en ganancias)
                     vender_ahora = True
                     motivo_venta = "TRAILING STOP LOSS activado"
                 
-                # Consideración: Si el TSL baja por debajo del precio de compra, y el SL fijo no lo ha cogido,
-                # esta lógica actual priorizará el SL fijo si está por encima del TSL en pérdida.
-                # Si quieres que el TSL también actúe en pérdida (por debajo del precio de compra),
-                # la condición `precio_actual > precio_compra` debería eliminarse o ajustarse.
-                # Para un TSL que protege ganancias, esta condición es correcta.
-
-                if vender_ahora:
-                    step = get_step_size(symbol)
-                    # Asegurarse de que la cantidad a vender es el saldo actual disponible del activo base
-                    # Esto es importante porque si una venta anterior falló o hubo un retiro manual,
-                    # la cantidad_en_posicion del diccionario podría no reflejar el saldo real.
+                if vender_ahora: # Si alguna condición de venta se cumple.
+                    step = get_step_size(symbol) # Obtiene el step_size para la venta.
+                    # Obtiene el saldo actual de la moneda base para asegurarse de vender lo que realmente se tiene.
                     cantidad_a_vender_real = ajustar_cantidad(obtener_saldo_moneda(base), step) 
                     
-                    if cantidad_a_vender_real > 0:
-                        orden = vender(symbol, cantidad_a_vender_real)
-                        if orden and 'fills' in orden and len(orden['fills']) > 0:
-                            salida = float(orden['fills'][0]['price'])
-                            ganancia = (salida - precio_compra) * cantidad_a_vender_real
+                    if cantidad_a_vender_real > 0: # Si hay cantidad válida para vender.
+                        orden = vender(symbol, cantidad_a_vender_real) # Intenta ejecutar la orden de venta.
+                        if orden and 'fills' in orden and len(orden['fills']) > 0: # Si la venta fue exitosa.
+                            salida = float(orden['fills'][0]['price']) # Precio real de ejecución de la venta.
+                            ganancia = (salida - precio_compra) * cantidad_a_vender_real # Calcula la ganancia/pérdida.
                             mensaje_simbolo += (
                                 f"\n✅ VENTA ejecutada por {motivo_venta} a {salida:.2f} USDT\n"
                                 f"Ganancia/Pérdida: {ganancia:.2f} USDT"
                             )
-                            posiciones_abiertas.pop(symbol) # Elimina el símbolo de las posiciones abiertas
+                            posiciones_abiertas.pop(symbol) # Elimina el símbolo de las posiciones abiertas ya que la operación se cerró.
                         else:
-                            mensaje_simbolo += f"\n❌ VENTA fallida para {symbol}."
+                            mensaje_simbolo += f"\n❌ VENTA fallida para {symbol}." # Mensaje si la venta falla.
                     else:
-                        mensaje_simbolo += f"\n⚠️ No hay {base} disponible para vender o cantidad muy pequeña."
+                        mensaje_simbolo += f"\n⚠️ No hay {base} disponible para vender o cantidad muy pequeña." # Mensaje si no hay suficiente para vender.
             
-            # Añadir los saldos actuales al final del mensaje de cada símbolo
+            # Al final de la evaluación de cada símbolo (compra o venta), añade el resumen de saldos globales.
             mensaje_simbolo += "\n" + obtener_saldos_formateados() 
-            general_message += mensaje_simbolo + "\n\n" 
+            general_message += mensaje_simbolo + "\n\n" # Añade el mensaje completo del símbolo al mensaje general.
 
-        send_telegram_message(general_message) # Envía un solo mensaje con toda la información
+        send_telegram_message(general_message) # Envía el mensaje acumulado de todos los símbolos a Telegram.
 
+        # --- GESTIÓN DEL TIEMPO ENTRE CICLOS ---
+        # Calcula cuánto tiempo ha tomado el ciclo de ejecución actual.
         elapsed_time = time.time() - start_time_cycle
-        sleep_duration = max(0, INTERVALO - elapsed_time)
-        print(f"⏳ Esperando {sleep_duration:.0f} segundos (aprox. {sleep_duration // 60} minutos)...\n")
-        time.sleep(sleep_duration)
+        # Calcula el tiempo que queda por esperar para cumplir con el INTERVALO total.
+        # 'max(0, ...)' asegura que el tiempo de espera no sea negativo si el ciclo tardó más que el intervalo.
+        sleep_duration = max(0, INTERVALO - elapsed_time) 
+        print(f"⏳ Esperando {sleep_duration:.0f} segundos (aprox. {sleep_duration // 60} minutos)...\n") # Imprime el tiempo de espera en consola.
+        time.sleep(sleep_duration) # Pausa la ejecución del bot por la duración calculada.
 
-    except Exception as e:
-        logging.error(f"Error general: {e}", exc_info=True) 
-        send_telegram_message(f"❌ Error general en el bot: {e}\n\n{obtener_saldos_formateados()}") # Enviar saldos también en caso de error general
-        print(f"❌ Error general: {e}")
-        time.sleep(INTERVALO)
-
-
+    except Exception as e: # Maneja cualquier error inesperado que ocurra fuera de las funciones específicas.
+        # Registra el error completo en el log, incluyendo el 'stack trace' para depuración.
+        logging.error(f"Error general en el bot: {e}", exc_info=True) 
+        # Envía una notificación de error a Telegram, incluyendo los saldos actuales.
+        send_telegram_message(f"❌ Error general en el bot: {e}\n\n{obtener_saldos_formateados()}") 
+        print(f"❌ Error general en el bot: {e}") # Imprime el error en la consola.
+        time.sleep(INTERVALO) # En caso de un error general, espera el intervalo completo antes de reintentar el bucle.
 
 
 """import os
