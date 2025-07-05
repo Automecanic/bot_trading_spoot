@@ -1,6 +1,12 @@
-python-binance==1.0.29
+#python-binance==1.0.29
 python-telegram-bot==13.15
 python-dotenv
 requests
 pandas
 pandas_ta
+python-binance
+requests
+numpy==1.26.4  # Fija esta versión específica de numpy
+pandas==2.2.2  # Fija esta versión específica de pandas
+pandas_ta      # Deja pandas_ta sin fijar, o si hay problemas, también fijarla.
+               # Si sigue dando error, prueba con pandas_ta==0.3.14b0
