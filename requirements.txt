@@ -8,5 +8,5 @@ python-binance
 requests
 numpy==1.26.4  # Fija esta versión específica de numpy
 pandas==2.2.2  # Fija esta versión específica de pandas
-pandas_ta      # Deja pandas_ta sin fijar, o si hay problemas, también fijarla.
+pandas_ta==0.3.14b0      # Deja pandas_ta sin fijar, o si hay problemas, también fijarla.
                # Si sigue dando error, prueba con pandas_ta==0.3.14b0

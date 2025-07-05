@@ -106,18 +106,22 @@ def comprar(symbol, cantidad):
     """Ejecuta una orden de compra de mercado."""
     if cantidad <= 0:
         logging.warning(f"⚠️ Intento de compra de {symbol} con cantidad no positiva: {cantidad}")
+        print(f"⚠️ Intento de compra de {symbol} con cantidad no positiva: {cantidad}")
         return None
     try:
         logging.info(f"✅ Intentando comprar {cantidad} de {symbol}")
         order = client.order_market_buy(symbol=symbol, quantity=cantidad)
         logging.info(f"✅ Compra de {symbol} exitosa: {order}")
+        print(f"✅ Compra de {symbol} exitosa: {order}")
         return order
     except BinanceAPIException as e:
         logging.error(f"❌ Error en compra de {symbol}: {e}")
+        print(f"❌ Error en compra de {symbol}: {e}")
         send_telegram_message(f"❌ Error en compra de {symbol}: {e}")
         return None
     except Exception as e:
         logging.error(f"❌ Error inesperado en compra de {symbol}: {e}")
+        print(f"❌ Error inesperado en compra de {symbol}: {e}")
         send_telegram_message(f"❌ Error inesperado en compra de {symbol}: {e}")
         return None
 
@@ -125,18 +129,22 @@ def vender(symbol, cantidad):
     """Ejecuta una orden de venta de mercado."""
     if cantidad <= 0:
         logging.warning(f"⚠️ Intento de venta de {symbol} con cantidad no positiva: {cantidad}")
+        print(f"⚠️ Intento de venta de {symbol} con cantidad no positiva: {cantidad}")
         return None
     try:
         logging.info(f"✅ Intentando vender {cantidad} de {symbol}")
         order = client.order_market_sell(symbol=symbol, quantity=cantidad)
         logging.info(f"✅ Venta de {symbol} exitosa: {order}")
+        print(f"✅ Venta de {symbol} exitosa: {order}")
         return order
     except BinanceAPIException as e:
         logging.error(f"❌ Error en venta de {symbol}: {e}")
+        print(f"❌ Error en venta de {symbol}: {e}")
         send_telegram_message(f"❌ Error en venta de {symbol}: {e}")
         return None
     except Exception as e:
         logging.error(f"❌ Error inesperado en venta de {symbol}: {e}")
+        print(f"❌ Error inesperado en venta de {symbol}: {e}")
         send_telegram_message(f"❌ Error inesperado en venta de {symbol}: {e}")
         return None
 
@@ -181,6 +189,8 @@ def obtener_precio_eur():
         return 1 / float(ticker["price"])
     except Exception as e:
         logging.warning(f"⚠️ No se pudo obtener EURUSDT: {e}")
+        print(f"⚠️ No se pudo obtener EURUSDT: {e}")
+
         return None
 
 def obtener_saldos_formateados():
