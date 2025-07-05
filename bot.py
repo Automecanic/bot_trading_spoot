@@ -510,7 +510,7 @@ def main():
             time.sleep(INTERVALO)
 
 if __name__ == "__main__":"""
-    main()
+    #main()
 
 
 """from binance.client import Client
