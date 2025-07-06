@@ -2,6 +2,7 @@ import os # Importa el módulo 'os' para interactuar con el sistema operativo (e
 import time # Importa el módulo 'time' para funciones relacionadas con el tiempo (ej. pausas).
 import logging # Importa el módulo 'logging' para registrar eventos y mensajes del bot.
 import requests # Importa el módulo 'requests' para hacer peticiones HTTP (ej. a la API de Telegram).
+import json # importa el modulo json para leer y eddribir jsom
 from binance.client import Client # Importa la clase 'Client' del paquete python-binance para interactuar con la API de Binance.
 from binance.exceptions import BinanceAPIException # Importa excepciones específicas de la API de Binance para un mejor manejo de errores.
 from binance.enums import * # Importa todas las constantes de enumeración de Binance (ej. KLINE_INTERVAL_1MINUTE, SIDE_BUY).
@@ -32,29 +33,60 @@ API_SECRET = os.getenv("BINANCE_API_SECRET") # Obtiene el secreto API de Binance
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")       # Obtiene el token de tu bot de Telegram de las variables de entorno.
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")       # Obtiene el ID del chat/grupo de Telegram de las variables de entorno.
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]   # Lista de pares de trading (símbolos) que el bot monitoreará y operará.
-                                                                    # Puedes modificar esta lista según los activos que te interesen.
-INTERVALO = 300     # Define el tiempo de espera entre cada ciclo completo de ejecución del bot (en segundos).
-                    # 300 segundos equivalen a 5 minutos.
+# ... (después de TELEGRAM_CHAT_ID) ...
 
-# --- PARÁMETROS DE GESTIÓN DE RIESGO ---
-# Estos valores determinan la estrategia de gestión de capital y los puntos de salida de las operaciones.
+CONFIG_FILE = "config.json" # Define el nombre del archivo de configuración
 
-RIESGO_POR_OPERACION_PORCENTAJE = 0.01 # Porcentaje del capital total que estás dispuesto a arriesgar en una única operación.
-                                      # Si tu Stop Loss se activa, la pérdida no excederá este porcentaje de tu capital total. (1% en este caso).
+# --- Funciones para cargar/guardar parámetros ---
+def load_parameters():
+    """Carga los parámetros desde el archivo JSON. Si no existe, devuelve valores por defecto."""
+    default_params = {
+        "EMA_PERIODO": 10,
+        "RSI_PERIODO": 14,
+        "RSI_UMBRAL_SOBRECOMPRA": 70,
+        "RIESGO_POR_OPERACION_PORCENTAJE": 0.01,
+        "TAKE_PROFIT_PORCENTAJE": 0.03,
+        "STOP_LOSS_PORCENTAJE": 0.02,
+        "TRAILING_STOP_PORCENTAJE": 0.015,
+        "INTERVALO": 300
+    }
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                loaded_params = json.load(f)
+                # Unir los parámetros cargados con los por defecto, priorizando los cargados
+                return {**default_params, **loaded_params}
+        except json.JSONDecodeError as e:
+            logging.error(f"❌ Error al leer JSON del archivo {CONFIG_FILE}: {e}. Usando parámetros por defecto.")
+            return default_params
+    else:
+        logging.info(f"Archivo de configuración '{CONFIG_FILE}' no encontrado. Creando con parámetros por defecto.")
+        save_parameters(default_params) # Crea el archivo con los valores por defecto
+        return default_params
 
-TAKE_PROFIT_PORCENTAJE = 0.03   # Porcentaje de ganancia sobre el precio de entrada que activará una venta (Take Profit). (3%).
-STOP_LOSS_PORCENTAJE = 0.02     # Porcentaje de pérdida sobre el precio de entrada que activará una venta (Stop Loss fijo). (2%).
-TRAILING_STOP_PORCENTAJE = 0.015 # Porcentaje de retroceso desde el precio máximo alcanzado que activará una venta (Trailing Stop Loss). (1.5%).
-                                 # Este SL se mueve con el precio a medida que este sube, protegiendo ganancias.
+def save_parameters(params):
+    """Guarda los parámetros en el archivo JSON."""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(params, f, indent=4) # 'indent=4' para un formato legible
+    except IOError as e:
+        logging.error(f"❌ Error al escribir en el archivo {CONFIG_FILE}: {e}")
 
-# --- PARÁMETROS DE INDICADORES TÉCNICOS ---
-# Configuración para el cálculo de la Media Móvil Exponencial (EMA) y el Índice de Fuerza Relativa (RSI).
+# Cargar parámetros al inicio del bot
+bot_params = load_parameters()
 
-EMA_PERIODO = 10    # El número de períodos (velas) utilizados para calcular la EMA. (Ej. 10 minutos si usas velas de 1 minuto).
-RSI_PERIODO = 14    # El número de períodos (velas) utilizados para calcular el RSI. (Ej. 14 minutos).
-RSI_UMBRAL_SOBRECOMPRA = 70 # Umbral superior del RSI. Si el RSI está por encima de este valor, se considera que el activo está "sobrecomprado".
-                            # El bot evitará abrir nuevas posiciones si el RSI está por encima de este umbral.
+# Asignar los valores del diccionario cargado a tus variables globales
+# ¡Esto reemplazará tus definiciones anteriores de estos parámetros fijos!
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"] # Esta lista sigue siendo fija
+INTERVALO = bot_params["INTERVALO"]
+RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"]
+TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"]
+STOP_LOSS_PORCENTAJE = bot_params["STOP_LOSS_PORCENTAJE"]
+TRAILING_STOP_PORCENTAJE = bot_params["TRAILING_STOP_PORCENTAJE"]
+EMA_PERIODO = bot_params["EMA_PERIODO"]
+RSI_PERIODO = bot_params["RSI_PERIODO"]
+RSI_UMBRAL_SOBRECOMPRA = bot_params["RSI_UMBRAL_SOBRECOMPRA"]
+
 
 # --- INICIALIZACIÓN DEL CLIENTE DE BINANCE Y CONFIGURACIÓN DEL LOGGING ---
 
