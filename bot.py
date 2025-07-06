@@ -122,11 +122,13 @@ def send_telegram_message(message):
     payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
 
     try:
-        requests.post(url, json=payload) # Envía la petición POST a la API de Telegram.
+        response = requests.post(url, json=payload) # Envía la petición POST a la API de Telegram.
+        response.raise_for_status() # Lanza una excepción para errores HTTP (4xx o 5xx)
+        return True
     except Exception as e: # Captura cualquier error que ocurra durante el envío.
         print(f"❌ Error enviando mensaje Telegram: {e}") # Imprime el error en consola.
         logging.error(f"❌ Error enviando mensaje Telegram: {e}") # Registra el error en el log.
-
+        return False
 def obtener_precio_actual(symbol):
     """
     Obtiene el último precio de mercado para un par de trading (símbolo) de Binance.
@@ -313,10 +315,166 @@ def obtener_saldos_formateados():
 # para el cálculo del Trailing Stop Loss.
 # Ejemplo: { 'BTCUSDT': { 'precio_compra': 30000.50, 'cantidad_base': 0.0123, 'max_precio_alcanzado': 30500.00 } }
 posiciones_abiertas = {} 
+# ... (después de tus funciones auxiliares) ...
+
+# =================== MANEJADOR DE COMANDOS DE TELEGRAM ===================
+
+last_update_id = 0 # Variable global para llevar el seguimiento del último mensaje procesado
+
+def get_telegram_updates(offset=None):
+    """
+    Obtiene actualizaciones (mensajes) del bot de Telegram usando long polling.
+    El 'offset' evita procesar mensajes antiguos repetidamente.
+    """
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    params = {'timeout': 30, 'offset': offset} # Timeout más largo para long polling
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status() # Lanza un error si la petición HTTP no fue exitosa (4xx o 5xx)
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ Error al obtener actualizaciones de Telegram: {e}")
+        return None
+
+def handle_telegram_commands():
+    """
+    Procesa los comandos recibidos por Telegram.
+    Actualiza las variables globales de los parámetros del bot y los guarda.
+    """
+    global last_update_id, RIESGO_POR_OPERACION_PORCENTAJE, TAKE_PROFIT_PORCENTAJE, \
+           STOP_LOSS_PORCENTAJE, TRAILING_STOP_PORCENTAJE, EMA_PERIODO, RSI_PERIODO, \
+           RSI_UMBRAL_SOBRECOMPRA, INTERVALO, bot_params # Necesitamos acceso global a estas variables
+
+    updates = get_telegram_updates(last_update_id + 1) # Obtener solo los mensajes nuevos
+
+    if updates and updates['ok']:
+        for update in updates['result']:
+            last_update_id = update['update_id'] # Actualizar el ID del último mensaje procesado
+
+            # Asegúrate de que el mensaje contiene texto y viene del chat autorizado
+            if 'message' in update and 'text' in update['message']:
+                chat_id = str(update['message']['chat']['id']) # Convertir a string para comparar
+                text = update['message']['text'].strip() # Eliminar espacios en blanco
+                
+                # Solo procesar comandos del CHAT_ID autorizado
+                if chat_id != TELEGRAM_CHAT_ID:
+                    send_telegram_message(f"⚠️ Comando recibido de chat no autorizado: {chat_id}")
+                    logging.warning(f"Comando de chat no autorizado: {chat_id}")
+                    continue
+
+                parts = text.split() # Divide el mensaje en partes (ej. "/set_tp 0.04")
+                command = parts[0].lower() # El primer elemento es el comando (en minúsculas)
+                
+                # Puedes enviar una confirmación de que el comando fue recibido
+                # send_telegram_message(f"<i>Comando recibido:</i> <code>{text}</code>") 
+
+                try:
+                    if command == "/set_tp":
+                        if len(parts) == 2:
+                            new_value = float(parts[1])
+                            TAKE_PROFIT_PORCENTAJE = new_value
+                            bot_params['TAKE_PROFIT_PORCENTAJE'] = new_value # Actualiza el diccionario
+                            save_parameters(bot_params) # Guarda el cambio en el archivo
+                            send_telegram_message(f"✅ TP establecido en: <b>{new_value:.4f}</b>")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_tp &lt;porcentaje_decimal_ej_0.03&gt;</code>")
+
+                    elif command == "/set_sl_fijo":
+                        if len(parts) == 2:
+                            new_value = float(parts[1])
+                            STOP_LOSS_PORCENTAJE = new_value
+                            bot_params['STOP_LOSS_PORCENTAJE'] = new_value
+                            save_parameters(bot_params)
+                            send_telegram_message(f"✅ SL Fijo establecido en: <b>{new_value:.4f}</b>")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_sl_fijo &lt;porcentaje_decimal_ej_0.02&gt;</code>")
+                    
+                    elif command == "/set_tsl":
+                        if len(parts) == 2:
+                            new_value = float(parts[1])
+                            TRAILING_STOP_PORCENTAJE = new_value
+                            bot_params['TRAILING_STOP_PORCENTAJE'] = new_value
+                            save_parameters(bot_params)
+                            send_telegram_message(f"✅ TSL establecido en: <b>{new_value:.4f}</b>")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_tsl &lt;porcentaje_decimal_ej_0.015&gt;</code>")
+
+                    elif command == "/set_riesgo":
+                        if len(parts) == 2:
+                            new_value = float(parts[1])
+                            RIESGO_POR_OPERACION_PORCENTAJE = new_value
+                            bot_params['RIESGO_POR_OPERACION_PORCENTAJE'] = new_value
+                            save_parameters(bot_params)
+                            send_telegram_message(f"✅ Riesgo por operación establecido en: <b>{new_value:.4f}</b>")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_riesgo &lt;porcentaje_decimal_ej_0.01&gt;</code>")
+                    
+                    elif command == "/set_ema_periodo":
+                        if len(parts) == 2:
+                            new_value = int(parts[1]) # Periodos suelen ser enteros
+                            EMA_PERIODO = new_value
+                            bot_params['EMA_PERIODO'] = new_value
+                            save_parameters(bot_params)
+                            send_telegram_message(f"✅ Período EMA establecido en: <b>{new_value}</b>")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_ema_periodo &lt;numero_entero_ej_10&gt;</code>")
+
+                    elif command == "/set_rsi_periodo":
+                        if len(parts) == 2:
+                            new_value = int(parts[1])
+                            RSI_PERIODO = new_value
+                            bot_params['RSI_PERIODO'] = new_value
+                            save_parameters(bot_params)
+                            send_telegram_message(f"✅ Período RSI establecido en: <b>{new_value}</b>")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_rsi_periodo &lt;numero_entero_ej_14&gt;</code>")
+                    
+                    elif command == "/set_rsi_umbral":
+                        if len(parts) == 2:
+                            new_value = int(parts[1])
+                            RSI_UMBRAL_SOBRECOMPRA = new_value
+                            bot_params['RSI_UMBRAL_SOBRECOMPRA'] = new_value
+                            save_parameters(bot_params)
+                            send_telegram_message(f"✅ Umbral RSI sobrecompra establecido en: <b>{new_value}</b>")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_rsi_umbral &lt;numero_entero_ej_70&gt;</code>")
+
+                    elif command == "/set_intervalo":
+                        if len(parts) == 2:
+                            new_value = int(parts[1])
+                            INTERVALO = new_value
+                            bot_params['INTERVALO'] = new_value
+                            save_parameters(bot_params)
+                            send_telegram_message(f"✅ Intervalo del ciclo establecido en: <b>{new_value}</b> segundos")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/set_intervalo &lt;segundos_ej_300&gt;</code>")
+
+                    elif command == "/get_params":
+                        # Muestra todos los parámetros actuales
+                        current_params_msg = "<b>Parámetros Actuales:</b>\n"
+                        for key, value in bot_params.items():
+                            # Formatear porcentajes para mayor claridad
+                            if isinstance(value, float) and 'PORCENTAJE' in key.upper():
+                                current_params_msg += f"- {key}: {value:.4f}\n"
+                            else:
+                                current_params_msg += f"- {key}: {value}\n"
+                        send_telegram_message(current_params_msg)
+
+                    else:
+                        send_telegram_message("Comando desconocido. Usa <code>/help</code> para ver los comandos disponibles.")
+
+                except ValueError:
+                    send_telegram_message("❌ Valor inválido. Asegúrate de introducir un número o porcentaje correcto.")
+                except Exception as ex:
+                    logging.error(f"Error procesando comando '{text}': {ex}", exc_info=True)
+                    send_telegram_message(f"❌ Error interno al procesar comando: {ex}")
+
+last_update_id = 0 
 
 while True: # El bucle principal del bot, se ejecuta indefinidamente para monitorear el mercado.
     start_time_cycle = time.time() # Marca el inicio del ciclo actual para calcular su duración.
     try:
+        handle_telegram_commands()
         general_message = "" # Inicializa una cadena para acumular todos los mensajes de Telegram de este ciclo.
 
         # Itera sobre cada símbolo configurado para el trading.
