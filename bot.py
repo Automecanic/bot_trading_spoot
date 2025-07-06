@@ -32,6 +32,8 @@ API_SECRET = os.getenv("BINANCE_API_SECRET") # Obtiene el secreto API de Binance
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")       # Obtiene el token de tu bot de Telegram de las variables de entorno.
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")       # Obtiene el ID del chat/grupo de Telegram de las variables de entorno.
+#prova bot https://api.telegram.org/bot7614530491:AAGf7GZWjUEm3Ccudj6zeoREuCsJglst_Qc/getUpdates
+
 
 # ... (después de TELEGRAM_CHAT_ID) ...
 
