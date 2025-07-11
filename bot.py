@@ -31,6 +31,10 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # Archivo para guardar y cargar los parámetros del bot.
 CONFIG_FILE = "config.json"
 
+#==================Control de moviments 
+
+OPEN_POSITIONS_FILE = "open_positions.json" # <--- ¡Añade esta línea!
+
 # =================== FUNCIONES DE CARGA Y GUARDADO DE PARÁMETROS ===================
 
 def load_parameters():
@@ -67,6 +71,46 @@ def save_parameters(params):
     except IOError as e:
         logging.error(f"❌ Error al escribir en el archivo {CONFIG_FILE}: {e}")
 
+# ... (después de save_parameters) ...
+
+# =================== FUNCIONES DE CARGA Y GUARDADO DE POSICIONES ABIERTAS ===================
+
+def load_open_positions():
+    """Carga las posiciones abiertas desde el archivo JSON."""
+    if os.path.exists(OPEN_POSITIONS_FILE):
+        try:
+            with open(OPEN_POSITIONS_FILE, 'r') as f:
+                data = json.load(f)
+                # Asegurarse de que los precios sean floats después de cargar
+                for symbol, pos in data.items():
+                    pos['precio_compra'] = float(pos['precio_compra'])
+                    pos['cantidad_base'] = float(pos['cantidad_base'])
+                    pos['max_precio_alcanzado'] = float(pos['max_precio_alcanzado'])
+                logging.info(f"✅ Posiciones abiertas cargadas desde {OPEN_POSITIONS_FILE}.")
+                return data
+        except json.JSONDecodeError as e:
+            logging.error(f"❌ Error al leer JSON del archivo {OPEN_POSITIONS_FILE}: {e}. Iniciando sin posiciones.")
+            return {}
+        except Exception as e:
+            logging.error(f"❌ Error inesperado al cargar posiciones desde {OPEN_POSITIONS_FILE}: {e}. Iniciando sin posiciones.")
+            return {}
+    logging.info(f"Archivo de posiciones abiertas '{OPEN_POSITIONS_FILE}' no encontrado. Iniciando sin posiciones.")
+    return {}
+
+def save_open_positions(positions):
+    """Guarda las posiciones abiertas en el archivo JSON."""
+    try:
+        with open(OPEN_POSITIONS_FILE, 'w') as f:
+            json.dump(positions, f, indent=4)
+        logging.info(f"✅ Posiciones abiertas guardadas en {OPEN_POSITIONS_FILE}.")
+    except IOError as e:
+        logging.error(f"❌ Error al escribir en el archivo {OPEN_POSITIONS_FILE}: {e}")
+
+# ... (resto de tu código) ...
+
+
+
+
 # Cargar parámetros al inicio del bot
 bot_params = load_parameters()
 
@@ -93,7 +137,7 @@ client.API_URL = 'https://testnet.binance.vision/api'  # Usar testnet
 
 # Diccionario para almacenar las posiciones abiertas.
 # La clave es el símbolo (ej. "BTCUSDT") y el valor es un diccionario con 'precio_compra', 'cantidad_base', 'max_precio_alcanzado'.
-posiciones_abiertas = {}
+posiciones_abiertas = load_open_positions()
 
 # Variables para la gestión de Telegram
 last_update_id = 0 # Para los comandos de Telegram (importante para no procesar mensajes repetidamente)
@@ -103,6 +147,50 @@ TELEGRAM_LISTEN_INTERVAL = 5 # Intervalo en segundos para revisar mensajes de Te
 transacciones_diarias = [] # Almacena los datos de las transacciones del día para el informe CSV
 ultima_fecha_informe_enviado = None # Para controlar cuándo se envió el último informe diario
 last_trading_check_time = 0 # Para controlar cuándo se ejecutó por última vez la lógica de trading pesada
+
+
+
+# =================== FUNCIONES DE CARGA Y GUARDADO DE POSICIONES ABIERTAS ===================
+
+def load_open_positions():
+    """Carga las posiciones abiertas desde el archivo JSON."""
+    if os.path.exists(OPEN_POSITIONS_FILE):
+        try:
+            with open(OPEN_POSITIONS_FILE, 'r') as f:
+                data = json.load(f)
+                # Asegurarse de que los precios sean floats después de cargar
+                for symbol, pos in data.items():
+                    pos['precio_compra'] = float(pos['precio_compra'])
+                    pos['cantidad_base'] = float(pos['cantidad_base'])
+                    pos['max_precio_alcanzado'] = float(pos['max_precio_alcanzado'])
+                logging.info(f"✅ Posiciones abiertas cargadas desde {OPEN_POSITIONS_FILE}.")
+                return data
+        except json.JSONDecodeError as e:
+            logging.error(f"❌ Error al leer JSON del archivo {OPEN_POSITIONS_FILE}: {e}. Iniciando sin posiciones.")
+            return {}
+        except Exception as e:
+            logging.error(f"❌ Error inesperado al cargar posiciones desde {OPEN_POSITIONS_FILE}: {e}. Iniciando sin posiciones.")
+            return {}
+    logging.info(f"Archivo de posiciones abiertas '{OPEN_POSITIONS_FILE}' no encontrado. Iniciando sin posiciones.")
+    return {}
+
+def save_open_positions(positions):
+    """Guarda las posiciones abiertas en el archivo JSON."""
+    try:
+        with open(OPEN_POSITIONS_FILE, 'w') as f:
+            json.dump(positions, f, indent=4)
+        logging.info(f"✅ Posiciones abiertas guardadas en {OPEN_POSITIONS_FILE}.")
+    except IOError as e:
+        logging.error(f"❌ Error al escribir en el archivo {OPEN_POSITIONS_FILE}: {e}")
+
+# ... (resto de tu código) ...
+
+
+
+
+
+
+
 
 # =================== FUNCIONES AUXILIARES DE UTILIDAD ===================
 
@@ -379,13 +467,22 @@ def comprar(symbol, cantidad):
         if order and 'fills' in order and len(order['fills']) > 0:
             precio_ejecucion = float(order['fills'][0]['price'])
             qty_ejecutada = float(order['fills'][0]['qty'])
+
+            # Almacena los detalles de la nueva posición abierta
+            posiciones_abiertas[symbol] = {
+                'precio_compra': precio_ejecucion,
+                'cantidad_base': qty_ejecutada,
+                'max_precio_alcanzado': precio_ejecucion # Inicializa el precio máximo alcanzado
+            }
+            save_open_positions(posiciones_abiertas) # <--- ¡Añade esta línea! Guarda la posición
+            
             transacciones_diarias.append({
                 'FechaHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'Símbolo': symbol,
                 'Tipo': 'COMPRA',
                 'Precio': precio_ejecucion,
                 'Cantidad': qty_ejecutada,
-                'GananciaPerdidaUSDT': 0.0, # En la compra no hay ganancia/perdida inmediata
+                'GananciaPerdidaUSDT': 0.0,
                 'Motivo': 'Condiciones de entrada'
             })
         return order
@@ -413,7 +510,10 @@ def vender(symbol, cantidad, motivo_venta="Desconocido"):
         if symbol in posiciones_abiertas: # Si la venta es de una posición que el bot gestionaba
             precio_compra = posiciones_abiertas[symbol]['precio_compra']
             ganancia_perdida_usdt = (precio_venta_ejecutada - precio_compra) * cantidad
-        
+            
+            posiciones_abiertas.pop(symbol) # <--- Elimina la posición
+            save_open_positions(posiciones_abiertas) # <--- ¡Añade esta línea! Guarda el cambio
+
         # Registrar la transacción en la lista diaria
         transacciones_diarias.append({
             'FechaHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -467,12 +567,13 @@ def vender_por_comando(symbol):
         # Si la venta fue exitosa, la posición se eliminará en la función vender()
         # ya que se llama a transacciones_diarias.append() y luego posiciones_abiertas.pop(symbol)
         # en la función vender.
-        if symbol in posiciones_abiertas: # Debería ser False si la venta fue exitosa
-            posiciones_abiertas.pop(symbol) # Asegurarse de eliminarla si no se hizo en vender() por algún motivo
+        #if symbol in posiciones_abiertas: # Debería ser False si la venta fue exitosa
+         #   posiciones_abiertas.pop(symbol) # Asegurarse de eliminarla si no se hizo en vender() por algún motivo
         
         # El mensaje de éxito ya lo envía la función vender()
         # send_telegram_message(f"✅ Venta de {symbol} ejecutada con éxito por comando.")
         logging.info(f"Venta de {symbol} ejecutada con éxito por comando.")
+        send_telegram_message(f"Venta de {symbol} ejecutada con éxito por comando.")
     else:
         send_telegram_message(f"❌ Fallo al ejecutar la venta de <b>{symbol}</b> por comando. Revisa los logs.")
         logging.error(f"Fallo al ejecutar la venta de {symbol} por comando.")
@@ -627,7 +728,7 @@ def handle_telegram_commands():
                         send_help_message()
 
 
-                        
+
                     # --- NUEVO COMANDO /vender ---
                     elif command == "/vender":
                         if len(parts) == 2:
@@ -825,7 +926,8 @@ while True:
 
                     if precio_actual > max_precio_alcanzado:
                         posiciones_abiertas[symbol]['max_precio_alcanzado'] = precio_actual
-                        max_precio_alcanzado = precio_actual
+                        max_precio_alcanzado = precio_actual # Actualiza la variable local para el ciclo actual.
+                        save_open_positions(posiciones_abiertas) # <--- ¡Añade esta línea! Guarda el cambio
 
                     take_profit_nivel = precio_compra * (1 + TAKE_PROFIT_PORCENTAJE)
                     stop_loss_fijo_nivel = precio_compra * (1 - STOP_LOSS_PORCENTAJE)
