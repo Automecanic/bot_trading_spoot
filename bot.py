@@ -430,6 +430,55 @@ def vender(symbol, cantidad, motivo_venta="Desconocido"):
         send_telegram_message(f"❌ Error en venta de {symbol}: {e}") # Notificar error por Telegram
         return None
 
+        # ... (después de la función vender y antes de MANEJADOR DE COMANDOS DE TELEGRAM) ...
+
+def vender_por_comando(symbol):
+    """
+    Intenta vender una posición abierta para un símbolo específico,
+    activada por un comando de Telegram.
+    """
+    if symbol not in posiciones_abiertas:
+        send_telegram_message(f"❌ No hay una posición abierta para <b>{symbol}</b> que gestionar por comando.")
+        logging.warning(f"Intento de venta por comando para {symbol}, pero no hay posición abierta.")
+        return
+
+    base_asset = symbol.replace("USDT", "")
+    cantidad_en_posicion = obtener_saldo_moneda(base_asset) # Obtener el saldo real disponible
+
+    if cantidad_en_posicion <= 0:
+        send_telegram_message(f"❌ No hay saldo disponible de <b>{base_asset}</b> para vender.")
+        logging.warning(f"Intento de venta por comando para {symbol}, pero el saldo es 0.")
+        return
+
+    step = get_step_size(symbol)
+    cantidad_a_vender_ajustada = ajustar_cantidad(cantidad_en_posicion, step)
+
+    if cantidad_a_vender_ajustada <= 0:
+        send_telegram_message(f"❌ La cantidad de <b>{base_asset}</b> a vender es demasiado pequeña o inválida.")
+        logging.warning(f"Cantidad a vender ajustada para {symbol} es <= 0: {cantidad_a_vender_ajustada}")
+        return
+
+    send_telegram_message(f"⚙️ Intentando vender <b>{cantidad_a_vender_ajustada:.6f} {base_asset}</b> de <b>{symbol}</b> por comando...")
+    logging.info(f"Comando de venta manual recibido para {symbol}. Cantidad a vender: {cantidad_a_vender_ajustada}")
+
+    orden = vender(symbol, cantidad_a_vender_ajustada, motivo_venta="Venta manual por comando")
+
+    if orden:
+        # Si la venta fue exitosa, la posición se eliminará en la función vender()
+        # ya que se llama a transacciones_diarias.append() y luego posiciones_abiertas.pop(symbol)
+        # en la función vender.
+        if symbol in posiciones_abiertas: # Debería ser False si la venta fue exitosa
+            posiciones_abiertas.pop(symbol) # Asegurarse de eliminarla si no se hizo en vender() por algún motivo
+        
+        # El mensaje de éxito ya lo envía la función vender()
+        # send_telegram_message(f"✅ Venta de {symbol} ejecutada con éxito por comando.")
+        logging.info(f"Venta de {symbol} ejecutada con éxito por comando.")
+    else:
+        send_telegram_message(f"❌ Fallo al ejecutar la venta de <b>{symbol}</b> por comando. Revisa los logs.")
+        logging.error(f"Fallo al ejecutar la venta de {symbol} por comando.")
+
+# ... (resto de tu código) ...
+
 # =================== MANEJADOR DE COMANDOS DE TELEGRAM ===================
 
 def get_telegram_updates(offset=None):
@@ -576,6 +625,22 @@ def handle_telegram_commands():
 
                     elif command == "/help":
                         send_help_message()
+
+
+                        
+                    # --- NUEVO COMANDO /vender ---
+                    elif command == "/vender":
+                        if len(parts) == 2:
+                            symbol_to_sell = parts[1].upper() # Asegúrate de que el símbolo esté en mayúsculas
+                            # Verificar si el símbolo es uno de los que el bot monitorea
+                            if symbol_to_sell in SYMBOLS:
+                                vender_por_comando(symbol_to_sell)
+                            else:
+                                send_telegram_message(f"❌ Símbolo <b>{symbol_to_sell}</b> no reconocido o no monitoreado por el bot.")
+                        else:
+                            send_telegram_message("❌ Uso: <code>/vender &lt;SIMBOLO_USDT&gt;</code> (ej. /vender BTCUSDT)")
+                    # --- FIN NUEVO COMANDO ---
+
 
                     else:
                         send_telegram_message("Comando desconocido. Usa <code>/help</code> para ver los comandos disponibles.")
