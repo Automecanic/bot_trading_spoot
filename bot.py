@@ -272,16 +272,45 @@ def get_step_size(symbol):
         for f in info['filters']:
             if f['filterType'] == 'LOT_SIZE':
                 return float(f['stepSize'])
-        return 0.000001 # Default si no se encuentra (muy pequeño)
+        # Valor predeterminado muy pequeño si no se encuentra (para evitar división por cero o errores)
+        logging.warning(f"⚠️ No se encontró LOT_SIZE filter para {symbol}. Usando stepSize por defecto: 0.000001")
+        return 0.000001
     except Exception as e:
         logging.error(f"❌ Error al obtener stepSize para {symbol}: {e}")
         return 0.000001
 
 def ajustar_cantidad(cantidad, step_size):
-    """Ajusta una cantidad para que sea múltiplo del step_size de Binance."""
-    if step_size == 0: return 0.0 # Evitar división por cero
-    # Multiplica y divide para asegurar que el valor es un múltiplo exacto del step_size
-    return float(int(cantidad / step_size) * step_size)
+    """
+    Ajusta una cantidad para que sea un múltiplo exacto del step_size de Binance
+    y con la precisión correcta en decimales.
+    """
+    if step_size == 0:
+        logging.warning("⚠️ step_size es 0, no se puede ajustar la cantidad.")
+        return 0.0
+
+    # Determinar el número de decimales que requiere el step_size
+    s_step_size = str(step_size)
+    if '.' in s_step_size:
+        # Contar decimales después del punto, eliminando ceros finales si step_size es "0.010"
+        decimal_places = len(s_step_size.split('.')[1].rstrip('0'))
+    else:
+        decimal_places = 0 # No hay decimales si step_size es un entero (ej. 1.0)
+
+    # Calcular la cantidad ajustada usando división de piso para evitar imprecisiones de float
+    # y luego convertir a string con la precisión correcta antes de volver a float
+    try:
+        # Multiplica por 10^decimal_places, redondea, y luego divide
+        # Esto es más robusto para manejar las precisiones
+        factor = 10**decimal_places
+        ajustada = (round(cantidad * factor / (step_size * factor)) * (step_size * factor)) / factor
+        
+        # Formatear a la cadena con la precisión exacta, luego convertir a float
+        # Esto elimina cualquier rastro de imprecisión flotante.
+        formatted_quantity_str = f"{ajustada:.{decimal_places}f}"
+        return float(formatted_quantity_str)
+    except Exception as e:
+        logging.error(f"❌ Error al ajustar cantidad {cantidad} con step {step_size}: {e}")
+        return 0.0
 
 def calcular_cantidad_a_comprar(saldo_usdt, precio_actual, stop_loss_porcentaje, symbol):
     """
