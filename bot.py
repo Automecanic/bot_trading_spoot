@@ -858,6 +858,7 @@ def send_help_message():
         " - <code>/set_rsi_umbral &lt;valor&gt;</code>: Establece el umbral de sobrecompra del RSI (ej. 70).\n"
         " - <code>/set_intervalo &lt;segundos&gt;</code>: Establece el intervalo del ciclo principal del bot en segundos (ej. 300).\n\n"
         "<b>Informes:</b>\n"
+        " - <code>/csv</code>: Genera y envía un archivo CSV con las transacciones del día hasta el momento.\n"
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n" # <--- ¡Añade esta línea!
         "<b>Ayuda:</b>\n"
         " - <code>/help</code>: Muestra este mensaje de ayuda.\n"
@@ -868,6 +869,60 @@ def send_help_message():
 
 
 # =================== BUCLE PRINCIPAL DEL BOT ===================
+
+# =================== CONFIGURACIÓN DEL MENÚ DE COMANDOS DE TELEGRAM ===================
+
+def set_telegram_commands_menu():
+    """
+    Configura el menú de comandos que aparece cuando el usuario escribe '/' en Telegram.
+    Se debe llamar una vez al inicio del bot o cuando los comandos cambien.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        logging.warning("⚠️ TOKEN de Telegram no configurado. No se puede configurar el menú de comandos.")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setMyCommands"
+    
+    # Define la lista de comandos con su descripción
+    commands = [
+        {"command": "get_params", "description": "Muestra los parámetros actuales del bot"},
+        {"command": "set_tp", "description": "Establece el Take Profit (ej. /set_tp 0.03)"},
+        {"command": "set_sl_fijo", "description": "Establece el Stop Loss Fijo (ej. /set_sl_fijo 0.02)"},
+        {"command": "set_tsl", "description": "Establece el Trailing Stop Loss (ej. /set_tsl 0.015)"},
+        {"command": "set_riesgo", "description": "Establece el riesgo por operación (ej. /set_riesgo 0.01)"},
+        {"command": "set_ema_periodo", "description": "Establece el período de la EMA (ej. /set_ema_periodo 10)"},
+        {"command": "set_rsi_periodo", "description": "Establece el período del RSI (ej. /set_rsi_periodo 14)"},
+        {"command": "set_rsi_umbral", "description": "Establece el umbral de sobrecompra del RSI (ej. /set_rsi_umbral 70)"},
+        {"command": "set_intervalo", "description": "Establece el intervalo del ciclo (ej. /set_intervalo 300)"},
+        {"command": "csv", "description": "Genera y envía un informe CSV de transacciones"},
+        {"command": "beneficio", "description": "Muestra el beneficio total acumulado"},
+        {"command": "vender", "description": "Vende una posición manualmente (ej. /vender BTCUSDT)"},
+        {"command": "help", "description": "Muestra este mensaje de ayuda"}
+    ]
+
+    payload = {'commands': json.dumps(commands)} # Convierte la lista de comandos a JSON string
+    headers = {'Content-Type': 'application/json'} # Especifica el tipo de contenido
+
+    try:
+        response = requests.post(url, data=payload, headers=headers)
+        response.raise_for_status() # Lanza una excepción para errores HTTP
+        result = response.json()
+        if result['ok']:
+            logging.info("✅ Menú de comandos de Telegram configurado con éxito.")
+            return True
+        else:
+            logging.error(f"❌ Fallo al configurar el menú de comandos: {result.get('description', 'Error desconocido')}")
+            return False
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ Error de red al configurar el menú de comandos: {e}")
+        return False
+
+
+
+
+        
+set_telegram_commands_menu() # <--- ¡Añade esta línea aquí!
+
 
 logging.info("Bot iniciado. Esperando comandos y monitoreando el mercado...")
 
