@@ -752,6 +752,9 @@ def handle_telegram_commands():
                     elif command == "/beneficio":
                         send_beneficio_message()
 
+                    elif command == "/get_positions_file":
+                        send_positions_file_content()
+
                     else:
                         send_telegram_message("Comando desconocido. Usa <code>/help</code> para ver los comandos disponibles.")
 
@@ -839,6 +842,34 @@ def send_beneficio_message():
         f"   - <b>{beneficio_eur:.2f} EUR</b>"
     )
     send_telegram_message(message)
+# =================== FUNCIONES DE DEPURACIÓN Y VERIFICACIÓN ===================
+
+def send_positions_file_content():
+    """
+    Lee el contenido del archivo open_positions.json y lo envía al chat de Telegram.
+    Útil para depuración en entornos de despliegue.
+    """
+    if not os.path.exists(OPEN_POSITIONS_FILE):
+        send_telegram_message(f"❌ Archivo de posiciones abiertas (<code>{OPEN_POSITIONS_FILE}</code>) no encontrado.")
+        logging.warning(f"Intento de leer {OPEN_POSITIONS_FILE}, pero no existe.")
+        return
+
+    try:
+        with open(OPEN_POSITIONS_FILE, 'r') as f:
+            content = f.read()
+        
+        # Si el contenido es muy largo, Telegram tiene un límite de 4096 caracteres por mensaje.
+        # Podríamos dividirlo o enviarlo como documento si es muy grande.
+        # Por ahora, asumimos que no será excesivamente grande.
+        message = (
+            f"📄 Contenido de <code>{OPEN_POSITIONS_FILE}</code>:\n\n"
+            f"<code>{content}</code>"
+        )
+        send_telegram_message(message)
+        logging.info(f"Contenido de {OPEN_POSITIONS_FILE} enviado a Telegram.")
+    except Exception as e:
+        send_telegram_message(f"❌ Error al leer o enviar el contenido de <code>{OPEN_POSITIONS_FILE}</code>: {e}")
+        logging.error(f"Error al leer o enviar {OPEN_POSITIONS_FILE}: {e}", exc_info=True)
 
 
 # =================== FUNCIÓN DE AYUDA ===================
@@ -862,6 +893,7 @@ def send_help_message():
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n" # <--- ¡Añade esta línea!
         "<b>Ayuda:</b>\n"
         " - <code>/help</code>: Muestra este mensaje de ayuda.\n"
+        " - <code>/get_positions_file</code>: Muestra el contenido del archivo de posiciones abiertas (para depuración).\n\n" # <--- ¡Añade esta línea!
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n\n" # <--- Asegúrate de que /vender esté aquí también.
         "<i>Recuerda usar valores decimales para porcentajes y enteros para períodos/umbrales.</i>"
     )
@@ -920,7 +952,7 @@ def set_telegram_commands_menu():
 
 
 
-        
+
 set_telegram_commands_menu() # <--- ¡Añade esta línea aquí!
 
 
