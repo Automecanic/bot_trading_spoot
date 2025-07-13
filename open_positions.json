@@ -1,0 +1,2037 @@
+{
+    "ETHUSDT": {
+        "precio_compra": 2991.88,
+        "cantidad_base": 7.9779,
+        "max_precio_alcanzado": 2991.88
+    },
+    "BTCUSDT": {
+        "precio_compra": 118616.01,
+        "cantidad_base": 0.31293,
+        "max_precio_alcanzado": 118616.01
+    },
+    "LTCUSDT": {
+        "precio_compra": 96.08,
+        "cantidad_base": 5.0,
+        "max_precio_alcanzado": 96.08
+    },
+    "BNBUSDT": {
+        "precio_compra": 690.24,
+        "cantidad_base": 37.252,
+        "max_precio_alcanzado": 690.24
+    },
+    "TRXUSDT": {
+        "precio_compra": 0.3048,
+        "cantidad_base": 1778.0,
+        "max_precio_alcanzado": 0.3048
+    },
+    "XRPUSDT": {
+        "precio_compra": 2.8599,
+        "cantidad_base": 1634.6,
+        "max_precio_alcanzado": 2.8599
+    },
+    "NEOUSDT": {
+        "precio_compra": 6.35,
+        "cantidad_base": 92.0,
+        "max_precio_alcanzado": 6.35
+    },
+    "QTUMUSDT": {
+        "precio_compra": 2.311,
+        "cantidad_base": 260.0,
+        "max_precio_alcanzado": 2.311
+    },
+    "GASUSDT": {
+        "precio_compra": 3.225,
+        "cantidad_base": 179.0,
+        "max_precio_alcanzado": 3.225
+    },
+    "LRCUSDT": {
+        "precio_compra": 0.0815,
+        "cantidad_base": 6693.0,
+        "max_precio_alcanzado": 0.0815
+    },
+    "ZRXUSDT": {
+        "precio_compra": 0.2648,
+        "cantidad_base": 2325.0,
+        "max_precio_alcanzado": 0.2648
+    },
+    "KNCUSDT": {
+        "precio_compra": 0.5047,
+        "cantidad_base": 1778.0,
+        "max_precio_alcanzado": 0.5047
+    },
+    "IOTAUSDT": {
+        "precio_compra": 0.2139,
+        "cantidad_base": 3197.0,
+        "max_precio_alcanzado": 0.2139
+    },
+    "LINKUSDT": {
+        "precio_compra": 15.81,
+        "cantidad_base": 38.0,
+        "max_precio_alcanzado": 15.81
+    },
+    "XVGUSDT": {
+        "precio_compra": 0.006557,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.006557
+    },
+    "MTLUSDT": {
+        "precio_compra": 0.796,
+        "cantidad_base": 755.0,
+        "max_precio_alcanzado": 0.796
+    },
+    "ETCUSDT": {
+        "precio_compra": 18.52,
+        "cantidad_base": 30.0,
+        "max_precio_alcanzado": 18.52
+    },
+    "ZECUSDT": {
+        "precio_compra": 42.95,
+        "cantidad_base": 13.0,
+        "max_precio_alcanzado": 42.95
+    },
+    "DASHUSDT": {
+        "precio_compra": 22.64,
+        "cantidad_base": 25.0,
+        "max_precio_alcanzado": 22.64
+    },
+    "REQUSDT": {
+        "precio_compra": 0.1504,
+        "cantidad_base": 3688.0,
+        "max_precio_alcanzado": 0.1504
+    },
+    "POWRUSDT": {
+        "precio_compra": 0.1812,
+        "cantidad_base": 3344.0,
+        "max_precio_alcanzado": 0.1812
+    },
+    "ENJUSDT": {
+        "precio_compra": 0.0791,
+        "cantidad_base": 7633.0,
+        "max_precio_alcanzado": 0.0791
+    },
+    "STORJUSDT": {
+        "precio_compra": 0.2982,
+        "cantidad_base": 2101.0,
+        "max_precio_alcanzado": 0.2982
+    },
+    "KMDUSDT": {
+        "precio_compra": 0.0296,
+        "cantidad_base": 16758.0,
+        "max_precio_alcanzado": 0.0296
+    },
+    "BATUSDT": {
+        "precio_compra": 0.1516,
+        "cantidad_base": 4035.0,
+        "max_precio_alcanzado": 0.1516
+    },
+    "LSKUSDT": {
+        "precio_compra": 0.444,
+        "cantidad_base": 1351.0,
+        "max_precio_alcanzado": 0.444
+    },
+    "MANAUSDT": {
+        "precio_compra": 0.3238,
+        "cantidad_base": 2011.0,
+        "max_precio_alcanzado": 0.3238
+    },
+    "ADXUSDT": {
+        "precio_compra": 0.0975,
+        "cantidad_base": 6560.0,
+        "max_precio_alcanzado": 0.0975
+    },
+    "ADAUSDT": {
+        "precio_compra": 0.74,
+        "cantidad_base": 31975.8,
+        "max_precio_alcanzado": 0.74
+    },
+    "XLMUSDT": {
+        "precio_compra": 0.4634,
+        "cantidad_base": 2162.0,
+        "max_precio_alcanzado": 0.4634
+    },
+    "ICXUSDT": {
+        "precio_compra": 0.1379,
+        "cantidad_base": 4036.0,
+        "max_precio_alcanzado": 0.1379
+    },
+    "RLCUSDT": {
+        "precio_compra": 1.067,
+        "cantidad_base": 549.0,
+        "max_precio_alcanzado": 1.067
+    },
+    "PIVXUSDT": {
+        "precio_compra": 0.1499,
+        "cantidad_base": 3937.0,
+        "max_precio_alcanzado": 0.1499
+    },
+    "STEEMUSDT": {
+        "precio_compra": 0.1466,
+        "cantidad_base": 3920.0,
+        "max_precio_alcanzado": 0.1466
+    },
+    "ZILUSDT": {
+        "precio_compra": 0.01268,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01268
+    },
+    "ONTUSDT": {
+        "precio_compra": 0.1457,
+        "cantidad_base": 4255.0,
+        "max_precio_alcanzado": 0.1457
+    },
+    "WANUSDT": {
+        "precio_compra": 0.1252,
+        "cantidad_base": 4678.0,
+        "max_precio_alcanzado": 0.1252
+    },
+    "SYSUSDT": {
+        "precio_compra": 0.04261,
+        "cantidad_base": 14921.0,
+        "max_precio_alcanzado": 0.04261
+    },
+    "TUSDUSDT": {
+        "precio_compra": 0.9974,
+        "cantidad_base": 10000.0,
+        "max_precio_alcanzado": 0.9974
+    },
+    "ZENUSDT": {
+        "precio_compra": 8.28,
+        "cantidad_base": 70.0,
+        "max_precio_alcanzado": 8.28
+    },
+    "THETAUSDT": {
+        "precio_compra": 0.816,
+        "cantidad_base": 736.0,
+        "max_precio_alcanzado": 0.816
+    },
+    "IOTXUSDT": {
+        "precio_compra": 0.02232,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02232
+    },
+    "DATAUSDT": {
+        "precio_compra": 0.01748,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01748
+    },
+    "SCUSDT": {
+        "precio_compra": 0.003368,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.003368
+    },
+    "DENTUSDT": {
+        "precio_compra": 0.000727,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.000727
+    },
+    "ARDRUSDT": {
+        "precio_compra": 0.08622,
+        "cantidad_base": 6439.0,
+        "max_precio_alcanzado": 0.08622
+    },
+    "HOTUSDT": {
+        "precio_compra": 0.000985,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.000985
+    },
+    "VETUSDT": {
+        "precio_compra": 0.02474,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02474
+    },
+    "RVNUSDT": {
+        "precio_compra": 0.01435,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01435
+    },
+    "USDCUSDT": {
+        "precio_compra": 0.9996,
+        "cantidad_base": 10000.0,
+        "max_precio_alcanzado": 0.9996
+    },
+    "ONGUSDT": {
+        "precio_compra": 0.1982,
+        "cantidad_base": 3056.0,
+        "max_precio_alcanzado": 0.1982
+    },
+    "FETUSDT": {
+        "precio_compra": 0.721,
+        "cantidad_base": 723.0,
+        "max_precio_alcanzado": 0.721
+    },
+    "IOSTUSDT": {
+        "precio_compra": 0.003801,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.003801
+    },
+    "CELRUSDT": {
+        "precio_compra": 0.00871,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.00871
+    },
+    "ATOMUSDT": {
+        "precio_compra": 4.696,
+        "cantidad_base": 124.0,
+        "max_precio_alcanzado": 4.696
+    },
+    "PHBUSDT": {
+        "precio_compra": 0.569,
+        "cantidad_base": 1188.0,
+        "max_precio_alcanzado": 0.569
+    },
+    "TFUELUSDT": {
+        "precio_compra": 0.03706,
+        "cantidad_base": 15484.0,
+        "max_precio_alcanzado": 0.03706
+    },
+    "ONEUSDT": {
+        "precio_compra": 0.01218,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01218
+    },
+    "ALGOUSDT": {
+        "precio_compra": 0.2576,
+        "cantidad_base": 2852.0,
+        "max_precio_alcanzado": 0.2576
+    },
+    "DOGEUSDT": {
+        "precio_compra": 0.20058,
+        "cantidad_base": 8663.0,
+        "max_precio_alcanzado": 0.20058
+    },
+    "DUSKUSDT": {
+        "precio_compra": 0.0662,
+        "cantidad_base": 9495.0,
+        "max_precio_alcanzado": 0.0662
+    },
+    "ANKRUSDT": {
+        "precio_compra": 0.01698,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01698
+    },
+    "WINUSDT": {
+        "precio_compra": 5.494e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 5.494e-05
+    },
+    "COSUSDT": {
+        "precio_compra": 0.003443,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.003443
+    },
+    "FUNUSDT": {
+        "precio_compra": 0.018246,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.018246
+    },
+    "CVCUSDT": {
+        "precio_compra": 0.1034,
+        "cantidad_base": 5755.0,
+        "max_precio_alcanzado": 0.1034
+    },
+    "CHZUSDT": {
+        "precio_compra": 0.04089,
+        "cantidad_base": 14444.0,
+        "max_precio_alcanzado": 0.04089
+    },
+    "BANDUSDT": {
+        "precio_compra": 0.693,
+        "cantidad_base": 892.0,
+        "max_precio_alcanzado": 0.693
+    },
+    "XTZUSDT": {
+        "precio_compra": 0.648,
+        "cantidad_base": 946.0,
+        "max_precio_alcanzado": 0.648
+    },
+    "HBARUSDT": {
+        "precio_compra": 0.24225,
+        "cantidad_base": 3387.0,
+        "max_precio_alcanzado": 0.24225
+    },
+    "NKNUSDT": {
+        "precio_compra": 0.0292,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0292
+    },
+    "STXUSDT": {
+        "precio_compra": 0.79,
+        "cantidad_base": 758.0,
+        "max_precio_alcanzado": 0.79
+    },
+    "KAVAUSDT": {
+        "precio_compra": 0.4367,
+        "cantidad_base": 1253.0,
+        "max_precio_alcanzado": 0.4367
+    },
+    "ARPAUSDT": {
+        "precio_compra": 0.02342,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02342
+    },
+    "BCHUSDT": {
+        "precio_compra": 507.1,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 507.1
+    },
+    "FTTUSDT": {
+        "precio_compra": 0.8898,
+        "cantidad_base": 615.0,
+        "max_precio_alcanzado": 0.8898
+    },
+    "EURUSDT": {
+        "precio_compra": 1.1791,
+        "cantidad_base": 425.0,
+        "max_precio_alcanzado": 1.1791
+    },
+    "OGNUSDT": {
+        "precio_compra": 0.0584,
+        "cantidad_base": 9633.0,
+        "max_precio_alcanzado": 0.0584
+    },
+    "BNTUSDT": {
+        "precio_compra": 0.6954,
+        "cantidad_base": 858.0,
+        "max_precio_alcanzado": 0.6954
+    },
+    "LTOUSDT": {
+        "precio_compra": 0.0035,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0035
+    },
+    "MBLUSDT": {
+        "precio_compra": 0.002453,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.002453
+    },
+    "COTIUSDT": {
+        "precio_compra": 0.05709,
+        "cantidad_base": 9775.0,
+        "max_precio_alcanzado": 0.05709
+    },
+    "SOLUSDT": {
+        "precio_compra": 162.52,
+        "cantidad_base": 122.094,
+        "max_precio_alcanzado": 162.52
+    },
+    "CTSIUSDT": {
+        "precio_compra": 0.0705,
+        "cantidad_base": 8840.0,
+        "max_precio_alcanzado": 0.0705
+    },
+    "HIVEUSDT": {
+        "precio_compra": 0.2384,
+        "cantidad_base": 2463.0,
+        "max_precio_alcanzado": 0.2384
+    },
+    "CHRUSDT": {
+        "precio_compra": 0.0939,
+        "cantidad_base": 6441.0,
+        "max_precio_alcanzado": 0.0939
+    },
+    "MDTUSDT": {
+        "precio_compra": 0.017,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.017
+    },
+    "COMPUSDT": {
+        "precio_compra": 46.89,
+        "cantidad_base": 11.0,
+        "max_precio_alcanzado": 46.89
+    },
+    "SXPUSDT": {
+        "precio_compra": 0.2021,
+        "cantidad_base": 2943.0,
+        "max_precio_alcanzado": 0.2021
+    },
+    "SNXUSDT": {
+        "precio_compra": 0.662,
+        "cantidad_base": 881.0,
+        "max_precio_alcanzado": 0.662
+    },
+    "VTHOUSDT": {
+        "precio_compra": 0.002159,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.002159
+    },
+    "DGBUSDT": {
+        "precio_compra": 0.00875,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.00875
+    },
+    "MKRUSDT": {
+        "precio_compra": 1889.8,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 1889.8
+    },
+    "RUNEUSDT": {
+        "precio_compra": 1.534,
+        "cantidad_base": 376.0,
+        "max_precio_alcanzado": 1.534
+    },
+    "DCRUSDT": {
+        "precio_compra": 17.01,
+        "cantidad_base": 32.0,
+        "max_precio_alcanzado": 17.01
+    },
+    "FIOUSDT": {
+        "precio_compra": 0.01617,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01617
+    },
+    "AVAUSDT": {
+        "precio_compra": 0.5936,
+        "cantidad_base": 1008.0,
+        "max_precio_alcanzado": 0.5936
+    },
+    "YFIUSDT": {
+        "precio_compra": 5716.0,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 5716.0
+    },
+    "JSTUSDT": {
+        "precio_compra": 0.03672,
+        "cantidad_base": 14604.0,
+        "max_precio_alcanzado": 0.03672
+    },
+    "CRVUSDT": {
+        "precio_compra": 0.675,
+        "cantidad_base": 973.0,
+        "max_precio_alcanzado": 0.675
+    },
+    "SANDUSDT": {
+        "precio_compra": 0.3181,
+        "cantidad_base": 2097.0,
+        "max_precio_alcanzado": 0.3181
+    },
+    "NMRUSDT": {
+        "precio_compra": 8.17,
+        "cantidad_base": 66.0,
+        "max_precio_alcanzado": 8.17
+    },
+    "DOTUSDT": {
+        "precio_compra": 4.005,
+        "cantidad_base": 150.0,
+        "max_precio_alcanzado": 4.005
+    },
+    "LUNAUSDT": {
+        "precio_compra": 0.1716,
+        "cantidad_base": 3466.0,
+        "max_precio_alcanzado": 0.1716
+    },
+    "RSRUSDT": {
+        "precio_compra": 0.008046,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.008046
+    },
+    "PAXGUSDT": {
+        "precio_compra": 3348.32,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 3348.32
+    },
+    "TRBUSDT": {
+        "precio_compra": 40.85,
+        "cantidad_base": 13.0,
+        "max_precio_alcanzado": 40.85
+    },
+    "WBTCUSDT": {
+        "precio_compra": 118509.46,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 118509.46
+    },
+    "SUSHIUSDT": {
+        "precio_compra": 0.716,
+        "cantidad_base": 844.0,
+        "max_precio_alcanzado": 0.716
+    },
+    "KSMUSDT": {
+        "precio_compra": 14.85,
+        "cantidad_base": 39.0,
+        "max_precio_alcanzado": 14.85
+    },
+    "EGLDUSDT": {
+        "precio_compra": 15.75,
+        "cantidad_base": 37.0,
+        "max_precio_alcanzado": 15.75
+    },
+    "DIAUSDT": {
+        "precio_compra": 0.4431,
+        "cantidad_base": 1332.0,
+        "max_precio_alcanzado": 0.4431
+    },
+    "UMAUSDT": {
+        "precio_compra": 1.19,
+        "cantidad_base": 459.0,
+        "max_precio_alcanzado": 1.19
+    },
+    "BELUSDT": {
+        "precio_compra": 0.2875,
+        "cantidad_base": 2240.0,
+        "max_precio_alcanzado": 0.2875
+    },
+    "UNIUSDT": {
+        "precio_compra": 8.622,
+        "cantidad_base": 70.0,
+        "max_precio_alcanzado": 8.622
+    },
+    "OXTUSDT": {
+        "precio_compra": 0.0606,
+        "cantidad_base": 9504.0,
+        "max_precio_alcanzado": 0.0606
+    },
+    "SUNUSDT": {
+        "precio_compra": 0.01884,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01884
+    },
+    "AVAXUSDT": {
+        "precio_compra": 21.35,
+        "cantidad_base": 28.0,
+        "max_precio_alcanzado": 21.35
+    },
+    "FLMUSDT": {
+        "precio_compra": 0.0289,
+        "cantidad_base": 15050.0,
+        "max_precio_alcanzado": 0.0289
+    },
+    "SCRTUSDT": {
+        "precio_compra": 0.1828,
+        "cantidad_base": 3211.0,
+        "max_precio_alcanzado": 0.1828
+    },
+    "CAKEUSDT": {
+        "precio_compra": 2.417,
+        "cantidad_base": 218.0,
+        "max_precio_alcanzado": 2.417
+    },
+    "UTKUSDT": {
+        "precio_compra": 0.0316,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0316
+    },
+    "XVSUSDT": {
+        "precio_compra": 6.49,
+        "cantidad_base": 87.0,
+        "max_precio_alcanzado": 6.49
+    },
+    "ALPHAUSDT": {
+        "precio_compra": 0.0098,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0098
+    },
+    "AAVEUSDT": {
+        "precio_compra": 310.92,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 310.92
+    },
+    "NEARUSDT": {
+        "precio_compra": 2.555,
+        "cantidad_base": 233.0,
+        "max_precio_alcanzado": 2.555
+    },
+    "FILUSDT": {
+        "precio_compra": 2.587,
+        "cantidad_base": 222.0,
+        "max_precio_alcanzado": 2.587
+    },
+    "INJUSDT": {
+        "precio_compra": 12.52,
+        "cantidad_base": 47.0,
+        "max_precio_alcanzado": 12.52
+    },
+    "AUDIOUSDT": {
+        "precio_compra": 0.0642,
+        "cantidad_base": 9021.0,
+        "max_precio_alcanzado": 0.0642
+    },
+    "CTKUSDT": {
+        "precio_compra": 0.3199,
+        "cantidad_base": 1593.0,
+        "max_precio_alcanzado": 0.3199
+    },
+    "AXSUSDT": {
+        "precio_compra": 2.535,
+        "cantidad_base": 228.0,
+        "max_precio_alcanzado": 2.535
+    },
+    "SLPUSDT": {
+        "precio_compra": 0.001546,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.001546
+    },
+    "STRAXUSDT": {
+        "precio_compra": 0.04972,
+        "cantidad_base": 11018.0,
+        "max_precio_alcanzado": 0.04972
+    },
+    "ROSEUSDT": {
+        "precio_compra": 0.02901,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02901
+    },
+    "SKLUSDT": {
+        "precio_compra": 0.02136,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02136
+    },
+    "GLMUSDT": {
+        "precio_compra": 0.2636,
+        "cantidad_base": 2259.0,
+        "max_precio_alcanzado": 0.2636
+    },
+    "GRTUSDT": {
+        "precio_compra": 0.1001,
+        "cantidad_base": 6047.0,
+        "max_precio_alcanzado": 0.1001
+    },
+    "JUVUSDT": {
+        "precio_compra": 0.97,
+        "cantidad_base": 552.0,
+        "max_precio_alcanzado": 0.97
+    },
+    "PSGUSDT": {
+        "precio_compra": 1.749,
+        "cantidad_base": 347.0,
+        "max_precio_alcanzado": 1.749
+    },
+    "1INCHUSDT": {
+        "precio_compra": 0.3259,
+        "cantidad_base": 2911.0,
+        "max_precio_alcanzado": 0.3259
+    },
+    "OGUSDT": {
+        "precio_compra": 4.477,
+        "cantidad_base": 124.0,
+        "max_precio_alcanzado": 4.477
+    },
+    "ATMUSDT": {
+        "precio_compra": 1.082,
+        "cantidad_base": 499.0,
+        "max_precio_alcanzado": 1.082
+    },
+    "ASRUSDT": {
+        "precio_compra": 2.33,
+        "cantidad_base": 218.0,
+        "max_precio_alcanzado": 2.33
+    },
+    "CELOUSDT": {
+        "precio_compra": 0.3308,
+        "cantidad_base": 1914.0,
+        "max_precio_alcanzado": 0.3308
+    },
+    "RIFUSDT": {
+        "precio_compra": 0.061,
+        "cantidad_base": 9523.0,
+        "max_precio_alcanzado": 0.061
+    },
+    "TRUUSDT": {
+        "precio_compra": 0.0305,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0305
+    },
+    "CKBUSDT": {
+        "precio_compra": 0.004181,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.004181
+    },
+    "TWTUSDT": {
+        "precio_compra": 0.7612,
+        "cantidad_base": 731.0,
+        "max_precio_alcanzado": 0.7612
+    },
+    "SFPUSDT": {
+        "precio_compra": 0.5148,
+        "cantidad_base": 1126.0,
+        "max_precio_alcanzado": 0.5148
+    },
+    "DODOUSDT": {
+        "precio_compra": 0.0446,
+        "cantidad_base": 13404.0,
+        "max_precio_alcanzado": 0.0446
+    },
+    "ACMUSDT": {
+        "precio_compra": 0.831,
+        "cantidad_base": 655.0,
+        "max_precio_alcanzado": 0.831
+    },
+    "AUCTIONUSDT": {
+        "precio_compra": 12.0,
+        "cantidad_base": 57.0,
+        "max_precio_alcanzado": 12.0
+    },
+    "PHAUSDT": {
+        "precio_compra": 0.111,
+        "cantidad_base": 5186.0,
+        "max_precio_alcanzado": 0.111
+    },
+    "FISUSDT": {
+        "precio_compra": 0.103,
+        "cantidad_base": 6206.0,
+        "max_precio_alcanzado": 0.103
+    },
+    "OMUSDT": {
+        "precio_compra": 0.223,
+        "cantidad_base": 2466.0,
+        "max_precio_alcanzado": 0.223
+    },
+    "PONDUSDT": {
+        "precio_compra": 0.0088,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0088
+    },
+    "DEGOUSDT": {
+        "precio_compra": 1.178,
+        "cantidad_base": 497.0,
+        "max_precio_alcanzado": 1.178
+    },
+    "ALICEUSDT": {
+        "precio_compra": 0.4625,
+        "cantidad_base": 1331.0,
+        "max_precio_alcanzado": 0.4625
+    },
+    "PERPUSDT": {
+        "precio_compra": 0.2792,
+        "cantidad_base": 2234.0,
+        "max_precio_alcanzado": 0.2792
+    },
+    "SUPERUSDT": {
+        "precio_compra": 0.7922,
+        "cantidad_base": 765.0,
+        "max_precio_alcanzado": 0.7922
+    },
+    "CFXUSDT": {
+        "precio_compra": 0.1048,
+        "cantidad_base": 6605.0,
+        "max_precio_alcanzado": 0.1048
+    },
+    "TKOUSDT": {
+        "precio_compra": 0.1576,
+        "cantidad_base": 3851.0,
+        "max_precio_alcanzado": 0.1576
+    },
+    "PUNDIXUSDT": {
+        "precio_compra": 0.3364,
+        "cantidad_base": 1815.0,
+        "max_precio_alcanzado": 0.3364
+    },
+    "TLMUSDT": {
+        "precio_compra": 0.00524,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.00524
+    },
+    "BARUSDT": {
+        "precio_compra": 1.164,
+        "cantidad_base": 486.0,
+        "max_precio_alcanzado": 1.164
+    },
+    "FORTHUSDT": {
+        "precio_compra": 2.592,
+        "cantidad_base": 213.0,
+        "max_precio_alcanzado": 2.592
+    },
+    "BAKEUSDT": {
+        "precio_compra": 0.0916,
+        "cantidad_base": 5002.0,
+        "max_precio_alcanzado": 0.0916
+    },
+    "SHIBUSDT": {
+        "precio_compra": 1.336e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 1.336e-05
+    },
+    "ICPUSDT": {
+        "precio_compra": 5.498,
+        "cantidad_base": 103.0,
+        "max_precio_alcanzado": 5.498
+    },
+    "ARUSDT": {
+        "precio_compra": 6.92,
+        "cantidad_base": 96.0,
+        "max_precio_alcanzado": 6.92
+    },
+    "MASKUSDT": {
+        "precio_compra": 1.374,
+        "cantidad_base": 424.0,
+        "max_precio_alcanzado": 1.374
+    },
+    "LPTUSDT": {
+        "precio_compra": 6.658,
+        "cantidad_base": 82.0,
+        "max_precio_alcanzado": 6.658
+    },
+    "ATAUSDT": {
+        "precio_compra": 0.0529,
+        "cantidad_base": 11907.0,
+        "max_precio_alcanzado": 0.0529
+    },
+    "GTCUSDT": {
+        "precio_compra": 0.29,
+        "cantidad_base": 2173.0,
+        "max_precio_alcanzado": 0.29
+    },
+    "MLNUSDT": {
+        "precio_compra": 8.01,
+        "cantidad_base": 71.0,
+        "max_precio_alcanzado": 8.01
+    },
+    "DEXEUSDT": {
+        "precio_compra": 7.611,
+        "cantidad_base": 67.0,
+        "max_precio_alcanzado": 7.611
+    },
+    "C98USDT": {
+        "precio_compra": 0.0543,
+        "cantidad_base": 11900.0,
+        "max_precio_alcanzado": 0.0543
+    },
+    "QNTUSDT": {
+        "precio_compra": 114.17,
+        "cantidad_base": 4.0,
+        "max_precio_alcanzado": 114.17
+    },
+    "FLOWUSDT": {
+        "precio_compra": 0.392,
+        "cantidad_base": 1552.0,
+        "max_precio_alcanzado": 0.392
+    },
+    "MINAUSDT": {
+        "precio_compra": 0.2008,
+        "cantidad_base": 2945.0,
+        "max_precio_alcanzado": 0.2008
+    },
+    "RAYUSDT": {
+        "precio_compra": 2.809,
+        "cantidad_base": 244.0,
+        "max_precio_alcanzado": 2.809
+    },
+    "FARMUSDT": {
+        "precio_compra": 29.01,
+        "cantidad_base": 19.0,
+        "max_precio_alcanzado": 29.01
+    },
+    "QUICKUSDT": {
+        "precio_compra": 0.02169,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02169
+    },
+    "MBOXUSDT": {
+        "precio_compra": 0.0636,
+        "cantidad_base": 10443.0,
+        "max_precio_alcanzado": 0.0636
+    },
+    "GHSTUSDT": {
+        "precio_compra": 0.458,
+        "cantidad_base": 1388.0,
+        "max_precio_alcanzado": 0.458
+    },
+    "WAXPUSDT": {
+        "precio_compra": 0.02346,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02346
+    },
+    "GNOUSDT": {
+        "precio_compra": 128.06,
+        "cantidad_base": 4.0,
+        "max_precio_alcanzado": 128.06
+    },
+    "XECUSDT": {
+        "precio_compra": 2.127e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 2.127e-05
+    },
+    "DYDXUSDT": {
+        "precio_compra": 0.6093,
+        "cantidad_base": 969.0,
+        "max_precio_alcanzado": 0.6093
+    },
+    "IDEXUSDT": {
+        "precio_compra": 0.02232,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02232
+    },
+    "USDPUSDT": {
+        "precio_compra": 0.9996,
+        "cantidad_base": 500.0,
+        "max_precio_alcanzado": 0.9996
+    },
+    "GALAUSDT": {
+        "precio_compra": 0.01737,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01737
+    },
+    "ILVUSDT": {
+        "precio_compra": 12.58,
+        "cantidad_base": 47.0,
+        "max_precio_alcanzado": 12.58
+    },
+    "YGGUSDT": {
+        "precio_compra": 0.1776,
+        "cantidad_base": 3431.0,
+        "max_precio_alcanzado": 0.1776
+    },
+    "DFUSDT": {
+        "precio_compra": 0.02923,
+        "cantidad_base": 17362.0,
+        "max_precio_alcanzado": 0.02923
+    },
+    "FIDAUSDT": {
+        "precio_compra": 0.0827,
+        "cantidad_base": 6302.0,
+        "max_precio_alcanzado": 0.0827
+    },
+    "AGLDUSDT": {
+        "precio_compra": 0.814,
+        "cantidad_base": 745.0,
+        "max_precio_alcanzado": 0.814
+    },
+    "RADUSDT": {
+        "precio_compra": 0.665,
+        "cantidad_base": 807.0,
+        "max_precio_alcanzado": 0.665
+    },
+    "RAREUSDT": {
+        "precio_compra": 0.0563,
+        "cantidad_base": 9999.0,
+        "max_precio_alcanzado": 0.0563
+    },
+    "SSVUSDT": {
+        "precio_compra": 9.23,
+        "cantidad_base": 69.0,
+        "max_precio_alcanzado": 9.23
+    },
+    "LAZIOUSDT": {
+        "precio_compra": 0.837,
+        "cantidad_base": 691.0,
+        "max_precio_alcanzado": 0.837
+    },
+    "CHESSUSDT": {
+        "precio_compra": 0.0716,
+        "cantidad_base": 6254.0,
+        "max_precio_alcanzado": 0.0716
+    },
+    "MOVRUSDT": {
+        "precio_compra": 6.535,
+        "cantidad_base": 93.0,
+        "max_precio_alcanzado": 6.535
+    },
+    "CITYUSDT": {
+        "precio_compra": 0.921,
+        "cantidad_base": 606.0,
+        "max_precio_alcanzado": 0.921
+    },
+    "ENSUSDT": {
+        "precio_compra": 22.26,
+        "cantidad_base": 27.0,
+        "max_precio_alcanzado": 22.26
+    },
+    "QIUSDT": {
+        "precio_compra": 0.0069,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0069
+    },
+    "PORTOUSDT": {
+        "precio_compra": 0.87,
+        "cantidad_base": 680.0,
+        "max_precio_alcanzado": 0.87
+    },
+    "JASMYUSDT": {
+        "precio_compra": 0.01598,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01598
+    },
+    "AMPUSDT": {
+        "precio_compra": 0.003817,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.003817
+    },
+    "PYRUSDT": {
+        "precio_compra": 1.068,
+        "cantidad_base": 557.0,
+        "max_precio_alcanzado": 1.068
+    },
+    "ALCXUSDT": {
+        "precio_compra": 8.85,
+        "cantidad_base": 68.0,
+        "max_precio_alcanzado": 8.85
+    },
+    "SANTOSUSDT": {
+        "precio_compra": 2.112,
+        "cantidad_base": 269.0,
+        "max_precio_alcanzado": 2.112
+    },
+    "BICOUSDT": {
+        "precio_compra": 0.1071,
+        "cantidad_base": 5506.0,
+        "max_precio_alcanzado": 0.1071
+    },
+    "FLUXUSDT": {
+        "precio_compra": 0.2393,
+        "cantidad_base": 2536.0,
+        "max_precio_alcanzado": 0.2393
+    },
+    "FXSUSDT": {
+        "precio_compra": 2.233,
+        "cantidad_base": 252.0,
+        "max_precio_alcanzado": 2.233
+    },
+    "VOXELUSDT": {
+        "precio_compra": 0.0563,
+        "cantidad_base": 11063.0,
+        "max_precio_alcanzado": 0.0563
+    },
+    "HIGHUSDT": {
+        "precio_compra": 0.616,
+        "cantidad_base": 980.0,
+        "max_precio_alcanzado": 0.616
+    },
+    "CVXUSDT": {
+        "precio_compra": 3.467,
+        "cantidad_base": 222.0,
+        "max_precio_alcanzado": 3.467
+    },
+    "PEOPLEUSDT": {
+        "precio_compra": 0.02124,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02124
+    },
+    "SPELLUSDT": {
+        "precio_compra": 0.0005222,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0005222
+    },
+    "JOEUSDT": {
+        "precio_compra": 0.1709,
+        "cantidad_base": 3508.0,
+        "max_precio_alcanzado": 0.1709
+    },
+    "ACHUSDT": {
+        "precio_compra": 0.02147,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02147
+    },
+    "IMXUSDT": {
+        "precio_compra": 0.539,
+        "cantidad_base": 1146.0,
+        "max_precio_alcanzado": 0.539
+    },
+    "GLMRUSDT": {
+        "precio_compra": 0.0769,
+        "cantidad_base": 8051.0,
+        "max_precio_alcanzado": 0.0769
+    },
+    "LOKAUSDT": {
+        "precio_compra": 0.0854,
+        "cantidad_base": 10618.0,
+        "max_precio_alcanzado": 0.0854
+    },
+    "API3USDT": {
+        "precio_compra": 0.74,
+        "cantidad_base": 825.0,
+        "max_precio_alcanzado": 0.74
+    },
+    "BTTCUSDT": {
+        "precio_compra": 6e-07,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 6e-07
+    },
+    "ACAUSDT": {
+        "precio_compra": 0.0298,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0298
+    },
+    "XNOUSDT": {
+        "precio_compra": 0.907,
+        "cantidad_base": 581.0,
+        "max_precio_alcanzado": 0.907
+    },
+    "WOOUSDT": {
+        "precio_compra": 0.083,
+        "cantidad_base": 7552.0,
+        "max_precio_alcanzado": 0.083
+    },
+    "ALPINEUSDT": {
+        "precio_compra": 0.874,
+        "cantidad_base": 737.0,
+        "max_precio_alcanzado": 0.874
+    },
+    "TUSDT": {
+        "precio_compra": 0.01739,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01739
+    },
+    "ASTRUSDT": {
+        "precio_compra": 0.02548,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02548
+    },
+    "GMTUSDT": {
+        "precio_compra": 0.0513,
+        "cantidad_base": 11600.0,
+        "max_precio_alcanzado": 0.0513
+    },
+    "KDAUSDT": {
+        "precio_compra": 0.4734,
+        "cantidad_base": 1296.0,
+        "max_precio_alcanzado": 0.4734
+    },
+    "APEUSDT": {
+        "precio_compra": 0.6708,
+        "cantidad_base": 826.0,
+        "max_precio_alcanzado": 0.6708
+    },
+    "BSWUSDT": {
+        "precio_compra": 0.0112,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0112
+    },
+    "BIFIUSDT": {
+        "precio_compra": 171.7,
+        "cantidad_base": 3.0,
+        "max_precio_alcanzado": 171.7
+    },
+    "NEXOUSDT": {
+        "precio_compra": 1.287,
+        "cantidad_base": 416.0,
+        "max_precio_alcanzado": 1.287
+    },
+    "REIUSDT": {
+        "precio_compra": 0.01738,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01738
+    },
+    "LDOUSDT": {
+        "precio_compra": 0.837,
+        "cantidad_base": 693.0,
+        "max_precio_alcanzado": 0.837
+    },
+    "OPUSDT": {
+        "precio_compra": 0.662,
+        "cantidad_base": 923.0,
+        "max_precio_alcanzado": 0.662
+    },
+    "LEVERUSDT": {
+        "precio_compra": 0.000178,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.000178
+    },
+    "STGUSDT": {
+        "precio_compra": 0.1719,
+        "cantidad_base": 3335.0,
+        "max_precio_alcanzado": 0.1719
+    },
+    "LUNCUSDT": {
+        "precio_compra": 6.34e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 6.34e-05
+    },
+    "GMXUSDT": {
+        "precio_compra": 12.99,
+        "cantidad_base": 36.0,
+        "max_precio_alcanzado": 12.99
+    },
+    "POLYXUSDT": {
+        "precio_compra": 0.1516,
+        "cantidad_base": 4098.0,
+        "max_precio_alcanzado": 0.1516
+    },
+    "APTUSDT": {
+        "precio_compra": 5.005,
+        "cantidad_base": 109.0,
+        "max_precio_alcanzado": 5.005
+    },
+    "OSMOUSDT": {
+        "precio_compra": 0.1802,
+        "cantidad_base": 3544.0,
+        "max_precio_alcanzado": 0.1802
+    },
+    "HFTUSDT": {
+        "precio_compra": 0.081,
+        "cantidad_base": 3618.0,
+        "max_precio_alcanzado": 0.081
+    },
+    "HOOKUSDT": {
+        "precio_compra": 0.117,
+        "cantidad_base": 5363.0,
+        "max_precio_alcanzado": 0.117
+    },
+    "MAGICUSDT": {
+        "precio_compra": 0.1823,
+        "cantidad_base": 4017.0,
+        "max_precio_alcanzado": 0.1823
+    },
+    "HIFIUSDT": {
+        "precio_compra": 0.0841,
+        "cantidad_base": 3781.0,
+        "max_precio_alcanzado": 0.0841
+    },
+    "RPLUSDT": {
+        "precio_compra": 6.0,
+        "cantidad_base": 100.0,
+        "max_precio_alcanzado": 6.0
+    },
+    "GNSUSDT": {
+        "precio_compra": 1.868,
+        "cantidad_base": 308.0,
+        "max_precio_alcanzado": 1.868
+    },
+    "SYNUSDT": {
+        "precio_compra": 0.1273,
+        "cantidad_base": 5413.0,
+        "max_precio_alcanzado": 0.1273
+    },
+    "LQTYUSDT": {
+        "precio_compra": 1.09,
+        "cantidad_base": 381.0,
+        "max_precio_alcanzado": 1.09
+    },
+    "USTCUSDT": {
+        "precio_compra": 0.01383,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01383
+    },
+    "PROMUSDT": {
+        "precio_compra": 7.18,
+        "cantidad_base": 77.0,
+        "max_precio_alcanzado": 7.18
+    },
+    "QKCUSDT": {
+        "precio_compra": 0.007504,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.007504
+    },
+    "IDUSDT": {
+        "precio_compra": 0.1797,
+        "cantidad_base": 3266.0,
+        "max_precio_alcanzado": 0.1797
+    },
+    "ARBUSDT": {
+        "precio_compra": 0.4168,
+        "cantidad_base": 1466.0,
+        "max_precio_alcanzado": 0.4168
+    },
+    "RDNTUSDT": {
+        "precio_compra": 0.02512,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02512
+    },
+    "EDUUSDT": {
+        "precio_compra": 0.1509,
+        "cantidad_base": 3825.0,
+        "max_precio_alcanzado": 0.1509
+    },
+    "SUIUSDT": {
+        "precio_compra": 3.5022,
+        "cantidad_base": 180.0,
+        "max_precio_alcanzado": 3.5022
+    },
+    "PEPEUSDT": {
+        "precio_compra": 6.006e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 6.006e-05
+    },
+    "FLOKIUSDT": {
+        "precio_compra": 9.802e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 9.802e-05
+    },
+    "WBETHUSDT": {
+        "precio_compra": 3214.67,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 3214.67
+    },
+    "MAVUSDT": {
+        "precio_compra": 0.04643,
+        "cantidad_base": 9992.0,
+        "max_precio_alcanzado": 0.04643
+    },
+    "PENDLEUSDT": {
+        "precio_compra": 3.949,
+        "cantidad_base": 146.0,
+        "max_precio_alcanzado": 3.949
+    },
+    "ARKMUSDT": {
+        "precio_compra": 0.554,
+        "cantidad_base": 1102.0,
+        "max_precio_alcanzado": 0.554
+    },
+    "WLDUSDT": {
+        "precio_compra": 1.062,
+        "cantidad_base": 562.0,
+        "max_precio_alcanzado": 1.062
+    },
+    "FDUSDUSDT": {
+        "precio_compra": 0.9981,
+        "cantidad_base": 10000.0,
+        "max_precio_alcanzado": 0.9981
+    },
+    "SEIUSDT": {
+        "precio_compra": 0.3247,
+        "cantidad_base": 1789.0,
+        "max_precio_alcanzado": 0.3247
+    },
+    "CYBERUSDT": {
+        "precio_compra": 1.624,
+        "cantidad_base": 418.0,
+        "max_precio_alcanzado": 1.624
+    },
+    "ARKUSDT": {
+        "precio_compra": 0.4577,
+        "cantidad_base": 1390.0,
+        "max_precio_alcanzado": 0.4577
+    },
+    "IQUSDT": {
+        "precio_compra": 0.003993,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.003993
+    },
+    "NTRNUSDT": {
+        "precio_compra": 0.1068,
+        "cantidad_base": 5868.0,
+        "max_precio_alcanzado": 0.1068
+    },
+    "TIAUSDT": {
+        "precio_compra": 1.89,
+        "cantidad_base": 345.0,
+        "max_precio_alcanzado": 1.89
+    },
+    "MEMEUSDT": {
+        "precio_compra": 0.001827,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.001827
+    },
+    "ORDIUSDT": {
+        "precio_compra": 9.404,
+        "cantidad_base": 68.0,
+        "max_precio_alcanzado": 9.404
+    },
+    "BEAMXUSDT": {
+        "precio_compra": 0.00695,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.00695
+    },
+    "VICUSDT": {
+        "precio_compra": 0.3138,
+        "cantidad_base": 3152.0,
+        "max_precio_alcanzado": 0.3138
+    },
+    "BLURUSDT": {
+        "precio_compra": 0.0887,
+        "cantidad_base": 7124.0,
+        "max_precio_alcanzado": 0.0887
+    },
+    "VANRYUSDT": {
+        "precio_compra": 0.036,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.036
+    },
+    "AEURUSDT": {
+        "precio_compra": 1.1353,
+        "cantidad_base": 440.0,
+        "max_precio_alcanzado": 1.1353
+    },
+    "JTOUSDT": {
+        "precio_compra": 1.929,
+        "cantidad_base": 239.0,
+        "max_precio_alcanzado": 1.929
+    },
+    "1000SATSUSDT": {
+        "precio_compra": 4.449e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 4.449e-05
+    },
+    "BONKUSDT": {
+        "precio_compra": 2.623e-05,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 2.623e-05
+    },
+    "ACEUSDT": {
+        "precio_compra": 0.585,
+        "cantidad_base": 994.0,
+        "max_precio_alcanzado": 0.585
+    },
+    "NFPUSDT": {
+        "precio_compra": 0.0729,
+        "cantidad_base": 9058.0,
+        "max_precio_alcanzado": 0.0729
+    },
+    "AIUSDT": {
+        "precio_compra": 0.1459,
+        "cantidad_base": 4623.0,
+        "max_precio_alcanzado": 0.1459
+    },
+    "XAIUSDT": {
+        "precio_compra": 0.0612,
+        "cantidad_base": 10036.0,
+        "max_precio_alcanzado": 0.0612
+    },
+    "MANTAUSDT": {
+        "precio_compra": 0.233,
+        "cantidad_base": 2717.0,
+        "max_precio_alcanzado": 0.233
+    },
+    "ALTUSDT": {
+        "precio_compra": 0.03557,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.03557
+    },
+    "JUPUSDT": {
+        "precio_compra": 0.5039,
+        "cantidad_base": 1137.0,
+        "max_precio_alcanzado": 0.5039
+    },
+    "PYTHUSDT": {
+        "precio_compra": 0.1201,
+        "cantidad_base": 4873.0,
+        "max_precio_alcanzado": 0.1201
+    },
+    "RONINUSDT": {
+        "precio_compra": 0.528,
+        "cantidad_base": 1136.0,
+        "max_precio_alcanzado": 0.528
+    },
+    "DYMUSDT": {
+        "precio_compra": 0.279,
+        "cantidad_base": 2222.0,
+        "max_precio_alcanzado": 0.279
+    },
+    "PIXELUSDT": {
+        "precio_compra": 0.04413,
+        "cantidad_base": 15685.0,
+        "max_precio_alcanzado": 0.04413
+    },
+    "STRKUSDT": {
+        "precio_compra": 0.1405,
+        "cantidad_base": 4382.0,
+        "max_precio_alcanzado": 0.1405
+    },
+    "PORTALUSDT": {
+        "precio_compra": 0.0607,
+        "cantidad_base": 13621.0,
+        "max_precio_alcanzado": 0.0607
+    },
+    "AXLUSDT": {
+        "precio_compra": 0.3634,
+        "cantidad_base": 1566.0,
+        "max_precio_alcanzado": 0.3634
+    },
+    "WIFUSDT": {
+        "precio_compra": 1.0,
+        "cantidad_base": 618.0,
+        "max_precio_alcanzado": 1.0
+    },
+    "METISUSDT": {
+        "precio_compra": 17.78,
+        "cantidad_base": 32.0,
+        "max_precio_alcanzado": 17.78
+    },
+    "AEVOUSDT": {
+        "precio_compra": 0.1083,
+        "cantidad_base": 6104.0,
+        "max_precio_alcanzado": 0.1083
+    },
+    "BOMEUSDT": {
+        "precio_compra": 0.001819,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.001819
+    },
+    "ETHFIUSDT": {
+        "precio_compra": 1.167,
+        "cantidad_base": 528.0,
+        "max_precio_alcanzado": 1.167
+    },
+    "ENAUSDT": {
+        "precio_compra": 0.3441,
+        "cantidad_base": 1911.0,
+        "max_precio_alcanzado": 0.3441
+    },
+    "WUSDT": {
+        "precio_compra": 0.0805,
+        "cantidad_base": 7028.0,
+        "max_precio_alcanzado": 0.0805
+    },
+    "TNSRUSDT": {
+        "precio_compra": 0.1423,
+        "cantidad_base": 4371.0,
+        "max_precio_alcanzado": 0.1423
+    },
+    "SAGAUSDT": {
+        "precio_compra": 0.2859,
+        "cantidad_base": 2429.0,
+        "max_precio_alcanzado": 0.2859
+    },
+    "TAOUSDT": {
+        "precio_compra": 396.0,
+        "cantidad_base": 1.0,
+        "max_precio_alcanzado": 396.0
+    },
+    "OMNIUSDT": {
+        "precio_compra": 2.94,
+        "cantidad_base": 324.0,
+        "max_precio_alcanzado": 2.94
+    },
+    "REZUSDT": {
+        "precio_compra": 0.01159,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01159
+    },
+    "BBUSDT": {
+        "precio_compra": 0.1032,
+        "cantidad_base": 6188.0,
+        "max_precio_alcanzado": 0.1032
+    },
+    "NOTUSDT": {
+        "precio_compra": 0.002153,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.002153
+    },
+    "IOUSDT": {
+        "precio_compra": 0.815,
+        "cantidad_base": 705.0,
+        "max_precio_alcanzado": 0.815
+    },
+    "ZKUSDT": {
+        "precio_compra": 0.05648,
+        "cantidad_base": 10960.0,
+        "max_precio_alcanzado": 0.05648
+    },
+    "LISTAUSDT": {
+        "precio_compra": 0.2615,
+        "cantidad_base": 2136.0,
+        "max_precio_alcanzado": 0.2615
+    },
+    "ZROUSDT": {
+        "precio_compra": 2.199,
+        "cantidad_base": 260.0,
+        "max_precio_alcanzado": 2.199
+    },
+    "GUSDT": {
+        "precio_compra": 0.01344,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01344
+    },
+    "BANANAUSDT": {
+        "precio_compra": 19.06,
+        "cantidad_base": 29.0,
+        "max_precio_alcanzado": 19.06
+    },
+    "RENDERUSDT": {
+        "precio_compra": 3.789,
+        "cantidad_base": 158.0,
+        "max_precio_alcanzado": 3.789
+    },
+    "TONUSDT": {
+        "precio_compra": 2.978,
+        "cantidad_base": 177.0,
+        "max_precio_alcanzado": 2.978
+    },
+    "DOGSUSDT": {
+        "precio_compra": 0.0001489,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0001489
+    },
+    "EURIUSDT": {
+        "precio_compra": 1.1788,
+        "cantidad_base": 425.0,
+        "max_precio_alcanzado": 1.1788
+    },
+    "SLFUSDT": {
+        "precio_compra": 0.0755,
+        "cantidad_base": 6134.0,
+        "max_precio_alcanzado": 0.0755
+    },
+    "POLUSDT": {
+        "precio_compra": 0.2333,
+        "cantidad_base": 2761.0,
+        "max_precio_alcanzado": 0.2333
+    },
+    "NEIROUSDT": {
+        "precio_compra": 0.00049965,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.00049965
+    },
+    "TURBOUSDT": {
+        "precio_compra": 0.004464,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.004464
+    },
+    "1MBABYDOGEUSDT": {
+        "precio_compra": 0.0013414,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.0013414
+    },
+    "CATIUSDT": {
+        "precio_compra": 0.0882,
+        "cantidad_base": 6421.0,
+        "max_precio_alcanzado": 0.0882
+    },
+    "HMSTRUSDT": {
+        "precio_compra": 0.000746,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.000746
+    },
+    "EIGENUSDT": {
+        "precio_compra": 1.338,
+        "cantidad_base": 454.0,
+        "max_precio_alcanzado": 1.338
+    },
+    "BNSOLUSDT": {
+        "precio_compra": 172.6,
+        "cantidad_base": 3.0,
+        "max_precio_alcanzado": 172.6
+    },
+    "SCRUSDT": {
+        "precio_compra": 0.36,
+        "cantidad_base": 2016.0,
+        "max_precio_alcanzado": 0.36
+    },
+    "LUMIAUSDT": {
+        "precio_compra": 0.31,
+        "cantidad_base": 2154.0,
+        "max_precio_alcanzado": 0.31
+    },
+    "KAIAUSDT": {
+        "precio_compra": 0.1574,
+        "cantidad_base": 3124.0,
+        "max_precio_alcanzado": 0.1574
+    },
+    "COWUSDT": {
+        "precio_compra": 0.3701,
+        "cantidad_base": 1832.0,
+        "max_precio_alcanzado": 0.3701
+    },
+    "CETUSUSDT": {
+        "precio_compra": 0.108,
+        "cantidad_base": 5609.0,
+        "max_precio_alcanzado": 0.108
+    },
+    "PNUTUSDT": {
+        "precio_compra": 0.277,
+        "cantidad_base": 2283.0,
+        "max_precio_alcanzado": 0.277
+    },
+    "ACTUSDT": {
+        "precio_compra": 0.0432,
+        "cantidad_base": 12690.0,
+        "max_precio_alcanzado": 0.0432
+    },
+    "USUALUSDT": {
+        "precio_compra": 0.0929,
+        "cantidad_base": 7928.0,
+        "max_precio_alcanzado": 0.0929
+    },
+    "THEUSDT": {
+        "precio_compra": 0.2815,
+        "cantidad_base": 1932.0,
+        "max_precio_alcanzado": 0.2815
+    },
+    "ACXUSDT": {
+        "precio_compra": 0.1682,
+        "cantidad_base": 3775.0,
+        "max_precio_alcanzado": 0.1682
+    },
+    "ORCAUSDT": {
+        "precio_compra": 2.299,
+        "cantidad_base": 261.0,
+        "max_precio_alcanzado": 2.299
+    },
+    "MOVEUSDT": {
+        "precio_compra": 0.1523,
+        "cantidad_base": 2962.0,
+        "max_precio_alcanzado": 0.1523
+    },
+    "MEUSDT": {
+        "precio_compra": 0.858,
+        "cantidad_base": 694.0,
+        "max_precio_alcanzado": 0.858
+    },
+    "VELODROMEUSDT": {
+        "precio_compra": 0.0555,
+        "cantidad_base": 11169.0,
+        "max_precio_alcanzado": 0.0555
+    },
+    "VANAUSDT": {
+        "precio_compra": 5.029,
+        "cantidad_base": 115.0,
+        "max_precio_alcanzado": 5.029
+    },
+    "1000CATUSDT": {
+        "precio_compra": 0.00785,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.00785
+    },
+    "PENGUUSDT": {
+        "precio_compra": 0.030279,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.030279
+    },
+    "BIOUSDT": {
+        "precio_compra": 0.0621,
+        "cantidad_base": 9799.0,
+        "max_precio_alcanzado": 0.0621
+    },
+    "DUSDT": {
+        "precio_compra": 0.03547,
+        "cantidad_base": 16359.0,
+        "max_precio_alcanzado": 0.03547
+    },
+    "AIXBTUSDT": {
+        "precio_compra": 0.1484,
+        "cantidad_base": 3897.0,
+        "max_precio_alcanzado": 0.1484
+    },
+    "CGPTUSDT": {
+        "precio_compra": 0.1076,
+        "cantidad_base": 5444.0,
+        "max_precio_alcanzado": 0.1076
+    },
+    "COOKIEUSDT": {
+        "precio_compra": 0.19,
+        "cantidad_base": 3081.0,
+        "max_precio_alcanzado": 0.19
+    },
+    "SUSDT": {
+        "precio_compra": 0.3633,
+        "cantidad_base": 1585.0,
+        "max_precio_alcanzado": 0.3633
+    },
+    "SOLVUSDT": {
+        "precio_compra": 0.04487,
+        "cantidad_base": 11136.0,
+        "max_precio_alcanzado": 0.04487
+    },
+    "TRUMPUSDT": {
+        "precio_compra": 9.71,
+        "cantidad_base": 57.0,
+        "max_precio_alcanzado": 9.71
+    },
+    "ANIMEUSDT": {
+        "precio_compra": 0.01853,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.01853
+    },
+    "BERAUSDT": {
+        "precio_compra": 1.99,
+        "cantidad_base": 296.0,
+        "max_precio_alcanzado": 1.99
+    },
+    "1000CHEEMSUSDT": {
+        "precio_compra": 0.001355,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.001355
+    },
+    "TSTUSDT": {
+        "precio_compra": 0.04137,
+        "cantidad_base": 12018.0,
+        "max_precio_alcanzado": 0.04137
+    },
+    "LAYERUSDT": {
+        "precio_compra": 0.6832,
+        "cantidad_base": 792.0,
+        "max_precio_alcanzado": 0.6832
+    },
+    "HEIUSDT": {
+        "precio_compra": 0.3206,
+        "cantidad_base": 1827.0,
+        "max_precio_alcanzado": 0.3206
+    },
+    "KAITOUSDT": {
+        "precio_compra": 1.5628,
+        "cantidad_base": 323.0,
+        "max_precio_alcanzado": 1.5628
+    },
+    "SHELLUSDT": {
+        "precio_compra": 0.1631,
+        "cantidad_base": 3440.0,
+        "max_precio_alcanzado": 0.1631
+    },
+    "REDUSDT": {
+        "precio_compra": 0.3464,
+        "cantidad_base": 1694.0,
+        "max_precio_alcanzado": 0.3464
+    },
+    "GPSUSDT": {
+        "precio_compra": 0.02442,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02442
+    },
+    "EPICUSDT": {
+        "precio_compra": 0.943,
+        "cantidad_base": 586.0,
+        "max_precio_alcanzado": 0.943
+    },
+    "BMTUSDT": {
+        "precio_compra": 0.0857,
+        "cantidad_base": 3640.0,
+        "max_precio_alcanzado": 0.0857
+    },
+    "FORMUSDT": {
+        "precio_compra": 3.3185,
+        "cantidad_base": 171.0,
+        "max_precio_alcanzado": 3.3185
+    },
+    "XUSDUSDT": {
+        "precio_compra": 0.9997,
+        "cantidad_base": 500.0,
+        "max_precio_alcanzado": 0.9997
+    },
+    "NILUSDT": {
+        "precio_compra": 0.3254,
+        "cantidad_base": 1751.0,
+        "max_precio_alcanzado": 0.3254
+    },
+    "PARTIUSDT": {
+        "precio_compra": 0.1813,
+        "cantidad_base": 2389.0,
+        "max_precio_alcanzado": 0.1813
+    },
+    "MUBARAKUSDT": {
+        "precio_compra": 0.04517,
+        "cantidad_base": 13228.0,
+        "max_precio_alcanzado": 0.04517
+    },
+    "TUTUSDT": {
+        "precio_compra": 0.05787,
+        "cantidad_base": 8069.0,
+        "max_precio_alcanzado": 0.05787
+    },
+    "BROCCOLI714USDT": {
+        "precio_compra": 0.04922,
+        "cantidad_base": 11845.0,
+        "max_precio_alcanzado": 0.04922
+    },
+    "BANANAS31USDT": {
+        "precio_compra": 0.008632,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.008632
+    },
+    "GUNUSDT": {
+        "precio_compra": 0.03263,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.03263
+    },
+    "BABYUSDT": {
+        "precio_compra": 0.05183,
+        "cantidad_base": 10689.0,
+        "max_precio_alcanzado": 0.05183
+    },
+    "ONDOUSDT": {
+        "precio_compra": 0.9086,
+        "cantidad_base": 652.0,
+        "max_precio_alcanzado": 0.9086
+    },
+    "BIGTIMEUSDT": {
+        "precio_compra": 0.06069,
+        "cantidad_base": 9865.0,
+        "max_precio_alcanzado": 0.06069
+    },
+    "VIRTUALUSDT": {
+        "precio_compra": 1.7293,
+        "cantidad_base": 337.0,
+        "max_precio_alcanzado": 1.7293
+    },
+    "KERNELUSDT": {
+        "precio_compra": 0.1459,
+        "cantidad_base": 4553.0,
+        "max_precio_alcanzado": 0.1459
+    },
+    "WCTUSDT": {
+        "precio_compra": 0.341,
+        "cantidad_base": 1635.0,
+        "max_precio_alcanzado": 0.341
+    },
+    "HYPERUSDT": {
+        "precio_compra": 0.4394,
+        "cantidad_base": 4856.0,
+        "max_precio_alcanzado": 0.4394
+    },
+    "INITUSDT": {
+        "precio_compra": 0.5014,
+        "cantidad_base": 1219.0,
+        "max_precio_alcanzado": 0.5014
+    },
+    "SIGNUSDT": {
+        "precio_compra": 0.07222,
+        "cantidad_base": 7507.0,
+        "max_precio_alcanzado": 0.07222
+    },
+    "STOUSDT": {
+        "precio_compra": 0.0831,
+        "cantidad_base": 7201.0,
+        "max_precio_alcanzado": 0.0831
+    },
+    "SYRUPUSDT": {
+        "precio_compra": 0.4896,
+        "cantidad_base": 907.0,
+        "max_precio_alcanzado": 0.4896
+    },
+    "KMNOUSDT": {
+        "precio_compra": 0.06099,
+        "cantidad_base": 8451.0,
+        "max_precio_alcanzado": 0.06099
+    },
+    "SXTUSDT": {
+        "precio_compra": 0.0894,
+        "cantidad_base": 6754.0,
+        "max_precio_alcanzado": 0.0894
+    },
+    "NXPCUSDT": {
+        "precio_compra": 0.9927,
+        "cantidad_base": 538.0,
+        "max_precio_alcanzado": 0.9927
+    },
+    "AWEUSDT": {
+        "precio_compra": 0.05735,
+        "cantidad_base": 8766.0,
+        "max_precio_alcanzado": 0.05735
+    },
+    "HAEDALUSDT": {
+        "precio_compra": 0.1656,
+        "cantidad_base": 4201.0,
+        "max_precio_alcanzado": 0.1656
+    },
+    "USD1USDT": {
+        "precio_compra": 0.9998,
+        "cantidad_base": 500.0,
+        "max_precio_alcanzado": 0.9998
+    },
+    "HUMAUSDT": {
+        "precio_compra": 0.03784,
+        "cantidad_base": 15115.0,
+        "max_precio_alcanzado": 0.03784
+    },
+    "AUSDT": {
+        "precio_compra": 0.5488,
+        "cantidad_base": 1037.0,
+        "max_precio_alcanzado": 0.5488
+    },
+    "SOPHUSDT": {
+        "precio_compra": 0.03672,
+        "cantidad_base": 16098.0,
+        "max_precio_alcanzado": 0.03672
+    },
+    "RESOLVUSDT": {
+        "precio_compra": 0.1695,
+        "cantidad_base": 3634.0,
+        "max_precio_alcanzado": 0.1695
+    },
+    "HOMEUSDT": {
+        "precio_compra": 0.02455,
+        "cantidad_base": 18446.0,
+        "max_precio_alcanzado": 0.02455
+    },
+    "SPKUSDT": {
+        "precio_compra": 0.03296,
+        "cantidad_base": 14060.0,
+        "max_precio_alcanzado": 0.03296
+    },
+    "NEWTUSDT": {
+        "precio_compra": 0.3125,
+        "cantidad_base": 1486.0,
+        "max_precio_alcanzado": 0.3125
+    },
+    "SAHARAUSDT": {
+        "precio_compra": 0.07399,
+        "cantidad_base": 6582.0,
+        "max_precio_alcanzado": 0.07399
+    }
+}
