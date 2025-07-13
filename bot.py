@@ -47,7 +47,8 @@ def load_parameters():
         "TAKE_PROFIT_PORCENTAJE": 0.03, # 3% de Take Profit
         "STOP_LOSS_PORCENTAJE": 0.02, # 2% de Stop Loss fijo
         "TRAILING_STOP_PORCENTAJE": 0.015, # 1.5% de Trailing Stop Loss
-        "INTERVALO": 300 # Ciclo de trading principal cada 300 segundos (5 minutos)
+        "INTERVALO": 300, # Ciclo de trading principal cada 300 segundos (5 minutos)
+        "TOTAL_BENEFICIO_ACUMULADO": 0.0
     }
     if os.path.exists(CONFIG_FILE):
         try:
@@ -116,7 +117,7 @@ bot_params = load_parameters()
 
 # Asignar los valores del diccionario cargado a tus variables globales
 # Esta lista de símbolos es fija, pero podría hacerse configurable también.
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"]
 INTERVALO = bot_params["INTERVALO"]
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"]
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"]
@@ -125,6 +126,7 @@ TRAILING_STOP_PORCENTAJE = bot_params["TRAILING_STOP_PORCENTAJE"]
 EMA_PERIODO = bot_params["EMA_PERIODO"]
 RSI_PERIODO = bot_params["RSI_PERIODO"]
 RSI_UMBRAL_SOBRECOMPRA = bot_params["RSI_UMBRAL_SOBRECOMPRA"]
+TOTAL_BENEFICIO_ACUMULADO = bot_params["TOTAL_BENEFICIO_ACUMULADO"]
 
 # =================== INICIALIZACIÓN DE CLIENTES BINANCE Y TELEGRAM ===================
 
@@ -511,6 +513,12 @@ def vender(symbol, cantidad, motivo_venta="Desconocido"):
             precio_compra = posiciones_abiertas[symbol]['precio_compra']
             ganancia_perdida_usdt = (precio_venta_ejecutada - precio_compra) * cantidad
             
+            # Actualizar el beneficio acumulado
+            global TOTAL_BENEFICIO_ACUMULADO # <--- ¡Necesario para modificar la global!
+            TOTAL_BENEFICIO_ACUMULADO += ganancia_perdida_usdt
+            bot_params['TOTAL_BENEFICIO_ACUMULADO'] = TOTAL_BENEFICIO_ACUMULADO # Actualiza el diccionario de parámetros
+            save_parameters(bot_params) # <--- ¡Guarda el cambio inmediatamente!
+
             posiciones_abiertas.pop(symbol) # <--- Elimina la posición
             save_open_positions(posiciones_abiertas) # <--- ¡Añade esta línea! Guarda el cambio
 
@@ -741,7 +749,8 @@ def handle_telegram_commands():
                         else:
                             send_telegram_message("❌ Uso: <code>/vender &lt;SIMBOLO_USDT&gt;</code> (ej. /vender BTCUSDT)")
                     # --- FIN NUEVO COMANDO ---
-
+                    elif command == "/beneficio":
+                        send_beneficio_message()
 
                     else:
                         send_telegram_message("Comando desconocido. Usa <code>/help</code> para ver los comandos disponibles.")
@@ -813,6 +822,25 @@ def enviar_informe_diario():
             os.remove(nombre_archivo_diario_csv)
     transacciones_diarias.clear()
 
+
+# =================== FUNCIÓN DE BENEFICIO TOTAL ===================
+
+def send_beneficio_message():
+    """Envía el beneficio total acumulado por el bot a Telegram."""
+    global TOTAL_BENEFICIO_ACUMULADO # Asegurarse de que accedemos a la variable global
+    
+    # Obtener el tipo de cambio actual para mostrar también en EUR
+    eur_usdt_rate = obtener_precio_eur()
+    beneficio_eur = TOTAL_BENEFICIO_ACUMULADO * eur_usdt_rate if eur_usdt_rate else 0.0
+
+    message = (
+        f"📈 <b>Beneficio Total Acumulado:</b>\n"
+        f"   - <b>{TOTAL_BENEFICIO_ACUMULADO:.2f} USDT</b>\n"
+        f"   - <b>{beneficio_eur:.2f} EUR</b>"
+    )
+    send_telegram_message(message)
+
+
 # =================== FUNCIÓN DE AYUDA ===================
 
 def send_help_message():
@@ -830,9 +858,10 @@ def send_help_message():
         " - <code>/set_rsi_umbral &lt;valor&gt;</code>: Establece el umbral de sobrecompra del RSI (ej. 70).\n"
         " - <code>/set_intervalo &lt;segundos&gt;</code>: Establece el intervalo del ciclo principal del bot en segundos (ej. 300).\n\n"
         "<b>Informes:</b>\n"
-        " - <code>/csv</code>: Genera y envía un archivo CSV con las transacciones del día hasta el momento.\n\n"
+        " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n" # <--- ¡Añade esta línea!
         "<b>Ayuda:</b>\n"
-        " - <code>/help</code>: Muestra este mensaje de ayuda.\n\n"
+        " - <code>/help</code>: Muestra este mensaje de ayuda.\n"
+        " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n\n" # <--- Asegúrate de que /vender esté aquí también.
         "<i>Recuerda usar valores decimales para porcentajes y enteros para períodos/umbrales.</i>"
     )
     send_telegram_message(help_message)
