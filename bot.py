@@ -228,6 +228,74 @@ def send_telegram_document(chat_id, file_path, caption=""):
         send_telegram_message(f"❌ Error inesperado enviando documento: {e}")
         return False
 
+        # =================== FUNCIONES DE TECLADO PERSONALIZADO DE TELEGRAM ===================
+
+def send_keyboard_menu(chat_id, message_text="Selecciona una opción:"):
+    """
+    Envía un mensaje con un teclado personalizado de Telegram.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        logging.warning("⚠️ TOKEN de Telegram no configurado. No se puede enviar el teclado personalizado.")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    
+    # Define los botones del teclado. Cada lista interna es una fila.
+    keyboard = {
+        'keyboard': [
+            [{'text': '/beneficio'}, {'text': '/get_params'}],
+            [{'text': '/csv'}, {'text': '/help'}],
+            [{'text': '/vender BTCUSDT'}] # Ejemplo de comando con argumento, el usuario puede editarlo
+        ],
+        'resize_keyboard': True, # Hace que el teclado sea más compacto.
+        'one_time_keyboard': False # True para que el teclado desaparezca después de un uso. False para que persista.
+    }
+
+    payload = {
+        'chat_id': chat_id,
+        'text': message_text,
+        'reply_markup': json.dumps(keyboard)
+    }
+
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        logging.info("✅ Teclado personalizado enviado con éxito.")
+        return True
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ Error al enviar teclado personalizado a Telegram: {e}")
+        return False
+
+def remove_keyboard_menu(chat_id, message_text="Teclado oculto."):
+    """
+    Oculta el teclado personalizado de Telegram.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        logging.warning("⚠️ TOKEN de Telegram no configurado. No se puede ocultar el teclado.")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    
+    # ReplyKeyboardRemove le dice a Telegram que oculte el teclado actual.
+    remove_keyboard = {
+        'remove_keyboard': True
+    }
+
+    payload = {
+        'chat_id': chat_id,
+        'text': message_text,
+        'reply_markup': json.dumps(remove_keyboard)
+    }
+
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        logging.info("✅ Teclado personalizado ocultado con éxito.")
+        return True
+    except requests.exceptions.RequestException as e:
+        logging.error(f"❌ Error al ocultar teclado personalizado: {e}")
+        return False
+
 def obtener_saldo_moneda(asset):
     """
     Obtiene el saldo disponible (free balance) de una moneda específica de tu cuenta de Binance.
@@ -865,7 +933,6 @@ def set_telegram_commands_menu():
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setMyCommands"
     
-    # Define la lista de comandos con su nombre y una breve descripción.
     commands = [
         {"command": "get_params", "description": "Muestra los parámetros actuales del bot"},
         {"command": "set_tp", "description": "Establece el Take Profit (ej. /set_tp 0.03)"},
@@ -880,15 +947,17 @@ def set_telegram_commands_menu():
         {"command": "beneficio", "description": "Muestra el beneficio total acumulado"},
         {"command": "vender", "description": "Vende una posición manualmente (ej. /vender BTCUSDT)"},
         {"command": "get_positions_file", "description": "Muestra el contenido del archivo de posiciones abiertas (para depuración)"},
+        {"command": "menu", "description": "Muestra el teclado de comandos principal"}, # <--- Añadido
+        {"command": "hide_menu", "description": "Oculta el teclado de comandos"}, # <--- Añadido
         {"command": "help", "description": "Muestra este mensaje de ayuda"}
     ]
 
-    payload = {'commands': json.dumps(commands)} # Convierte la lista de comandos a una cadena JSON.
-    headers = {'Content-Type': 'application/json'} # Especifica el tipo de contenido de la solicitud.
+    payload = {'commands': json.dumps(commands)}
+    headers = {'Content-Type': 'application/json'}
 
     try:
         response = requests.post(url, data=payload, headers=headers)
-        response.raise_for_status() # Lanza una excepción si la solicitud falla.
+        response.raise_for_status()
         result = response.json()
         if result['ok']:
             logging.info("✅ Menú de comandos de Telegram configurado con éxito.")
@@ -951,7 +1020,9 @@ def send_help_message():
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n"
         "<b>Utilidades:</b>\n"
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
-        " - <code>/get_positions_file</code>: Muestra el contenido del archivo de posiciones abiertas (para depuración).\n\n"
+        " - <code>/get_positions_file</code>: Muestra el contenido del archivo de posiciones abiertas (para depuración).\n"
+        " - <code>/menu</code>: Muestra el teclado de comandos principal.\n" # <--- Añadido
+        " - <code>/hide_menu</code>: Oculta el teclado de comandos.\n\n" # <--- Añadido
         "<b>Ayuda:</b>\n"
         " - <code>/help</code>: Muestra este mensaje de ayuda.\n\n"
         "<i>Recuerda usar valores decimales para porcentajes y enteros para períodos/umbrales.</i>"
