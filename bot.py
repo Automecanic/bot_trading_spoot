@@ -1194,7 +1194,9 @@ while True:
                     cantidad_en_posicion = posicion['cantidad_base']
                     max_precio_alcanzado = posicion['max_precio_alcanzado']
 
-                    # Actualiza el precio máximo alcanzado si el precio actual es un nuevo máximo para esta posición.
+                    # Calcula el nivel de Stop Loss fijo basado en el precio de compra.
+                    stop_loss_fijo_nivel = precio_compra * (1 - STOP_LOSS_PORCENTAJE) # <--- Variable definida aquí
+
                     if precio_actual > max_precio_alcanzado:
                         posiciones_abiertas[symbol]['max_precio_alcanzado'] = precio_actual
                         max_precio_alcanzado = precio_actual # Actualiza la variable local para el ciclo actual.
@@ -1221,7 +1223,7 @@ while True:
                     # --- Cálculo de Niveles de Salida ---
                     # El nivel de Stop Loss actual será el SL fijo original o el SL movido a breakeven.
                     # 'posicion.get' se usa para obtener 'stop_loss_fijo_nivel_actual' si existe, si no, usa el SL fijo inicial.
-                    current_stop_loss_level = posicion.get('stop_loss_fijo_nivel_actual', precio_compra * (1 - STOP_LOSS_PORCENTAJE))
+                    current_stop_loss_level = posicion.get('stop_loss_fijo_nivel_actual', stop_loss_fijo_nivel) # <--- Ahora usa la variable definida.
 
                     take_profit_nivel = precio_compra * (1 + TAKE_PROFIT_PORCENTAJE) # Nivel de Take Profit.
                     trailing_stop_nivel = max_precio_alcanzado * (1 - TRAILING_STOP_PORCENTAJE) # Nivel de Trailing Stop.
@@ -1294,3 +1296,4 @@ while True:
         send_telegram_message(f"❌ Error general en el bot: {e}\n\n{obtener_saldos_formateados()}") # Notifica al usuario por Telegram.
         print(f"❌ Error general en el bot: {e}") # Imprime el error en la consola.
         time.sleep(INTERVALO) # En caso de un error general, espera el intervalo completo antes de reintentar el bucle.
+
