@@ -726,7 +726,12 @@ def handle_telegram_commands():
 
                 try:
                     # --- Comandos para establecer parámetros de estrategia ---
-                    if command == "/set_tp":
+                    if command == "/start" or command == "/menu":
+                        # Asegúrate de pasar el chat_id correcto
+                        send_keyboard_menu(chat_id, "¡Hola! Soy tu bot de trading. Selecciona una opción del teclado o usa /help.")
+                    elif command == "/hide_menu":
+                        remove_keyboard_menu(chat_id)
+                    elif command == "/set_tp":
                         if len(parts) == 2:
                             new_value = float(parts[1])
                             TAKE_PROFIT_PORCENTAJE = new_value
