@@ -116,76 +116,29 @@ def convert_dust_to_bnb(client):
     Requiere el objeto 'client' de Binance.
     """
     try:
-        # Obtener activos que pueden ser convertidos a BNB (dust)
-        # La API de Binance tiene un endpoint específico para esto.
-        # get_dust_log() muestra el historial de conversiones
-        # user_asset_dribblet_record() es para realizar la conversión
-        
-        # Primero, obtener los activos elegibles para la conversión
-        # No hay un endpoint directo para "listar dust elegible",
-        # pero podemos intentar convertir y manejar la respuesta.
-        # La forma más común es usar el endpoint para convertir activos pequeños.
-        
-        # Nota: La API de Binance no tiene un endpoint para listar "dust" directamente
-        # para luego convertirlo. El endpoint para convertir es para activos específicos.
-        # Sin embargo, la función de la web de Binance "Convert Small Assets to BNB"
-        # internamente gestiona esto. Para simularlo o interactuar con ella,
-        # necesitaríamos un endpoint que permita la conversión masiva o por activo.
-        # La librería python-binance usa client.transfer_dust() o client.dust_transfer().
-        
         dust_assets = []
-        # Obtener todos los balances del usuario
         account_info = client.get_account()
         for balance in account_info['balances']:
             asset = balance['asset']
             free = float(balance['free'])
-            locked = float(balance['locked'])
             
-            # Un umbral arbitrario para considerar "dust"
-            # Binance define dust como valor inferior a 0.001 BTC o su equivalente.
-            # Aquí usaremos un umbral pequeño en USDT para simplificar.
-            # Para una implementación más precisa, deberíamos obtener el valor en USDT
-            # de cada asset y compararlo con el umbral de Binance.
-            
-            # Por simplicidad, vamos a intentar convertir todos los activos que no sean USDT o BNB
-            # y que tengan un saldo libre > 0 pero pequeño.
-            # La API de Binance para dust transfer requiere una lista de activos.
-            
-            # Para un enfoque más robusto, se necesitaría:
-            # 1. Obtener el precio actual de cada asset en USDT.
-            # 2. Calcular el valor en USDT del saldo de cada asset.
-            # 3. Si el valor es menor que un umbral (ej. 0.0001 BTC o 0.001 BNB), añadirlo a la lista.
-            
-            # Dado que la API de Binance para `dust_transfer` requiere una lista de `asset` strings,
-            # y no hay un endpoint fácil para "listar dust elegible",
-            # la forma más directa es intentar con los activos que sabemos que suelen ser dust
-            # o que el usuario podría especificar, y manejar las excepciones.
-
-            # Una forma de obtener activos elegibles sería a través de get_all_dust_log()
-            # y ver qué activos se han convertido antes o qué activos tienen un valor muy bajo.
-            # Sin embargo, el método `dust_transfer` es el que realmente realiza la acción.
-
-            # Vamos a simular la identificación de dust para los SYMBOLS que monitoreamos
-            # y que no son USDT o BNB, si su saldo es muy pequeño.
-            # Esto es una simplificación; la lógica real de Binance es más compleja.
+            # Solo considerar activos que no son USDT o BNB y que tienen un saldo libre > 0
             if asset not in ["USDT", "BNB"] and free > 0:
-                # Intentar obtener el valor en USDT. Si no es posible, se asume que no es dust elegible.
                 try:
+                    # Intentar obtener el valor en USDT para determinar si es "dust"
                     symbol_pair = asset + "USDT"
                     price_usdt = obtener_precio_actual(client, symbol_pair)
                     value_usdt = free * price_usdt
                     
-                    # Umbral de "dust" en USDT (ej. 0.001 BTC puede ser ~40-50 USDT, pero Binance permite menos)
-                    # El umbral real de Binance para dust es muy bajo (ej. < 0.001 BTC)
-                    # Para testnet, los valores pueden ser diferentes o la funcionalidad limitada.
-                    # Un valor más realista para "dust" que Binance permite convertir es a menudo < ~0.00001 BTC
-                    # que es un valor muy pequeño. Para fines de ejemplo, usaremos un umbral bajo.
-                    if value_usdt < 0.01: # Si el valor es menor a 0.01 USDT, lo consideramos dust
+                    # Umbral de "dust" en USDT (ej. menos de 0.01 USDT)
+                    # Este umbral es una aproximación, Binance tiene sus propios umbrales.
+                    if value_usdt > 0 and value_usdt < 0.01: # Asegurarse de que no sea 0 y sea pequeño
                         dust_assets.append(asset)
                         logging.info(f"Identificado {free:.8f} {asset} como posible dust (valor: {value_usdt:.4f} USDT).")
                 except Exception as ex:
+                    # Si no se puede obtener el precio en USDT (ej. par no existe), se ignora.
                     logging.debug(f"No se pudo obtener el precio de {asset} en USDT para verificar dust: {ex}")
-                    pass # Ignorar activos que no se pueden convertir a USDT fácilmente.
+                    pass
 
         if not dust_assets:
             logging.info("No se encontraron activos elegibles para convertir a BNB (dust).")
@@ -193,9 +146,8 @@ def convert_dust_to_bnb(client):
 
         logging.info(f"Intentando convertir los siguientes activos a BNB: {', '.join(dust_assets)}")
         
-        # Realizar la transferencia de dust
-        # La API de Binance para dust transfer requiere una lista de assets.
-        result = client.dust_transfer(asset=dust_assets)
+        # Corregido: Usar client.transfer_dust() en lugar de client.dust_transfer()
+        result = client.transfer_dust(asset=dust_assets)
         
         if result and result['totalServiceCharge'] is not None:
             total_transfered = float(result['totalTransfered'])
