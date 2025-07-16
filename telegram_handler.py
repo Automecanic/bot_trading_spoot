@@ -1,16 +1,10 @@
-import os
+import requests
 import json
 import logging
-import requests
-import time # Necesario para el debounce de posiciones si se usa aquí, aunque se pasa el dict
+import os # Necesario para send_positions_file_content
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Variables globales que se pasarán o se asumirán configuradas externamente
-# Estas variables serán necesarias para las funciones de este módulo.
-# TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID se asumen que se obtienen del entorno.
-# OPEN_POSITIONS_FILE se pasa para la función de depuración.
 
 def send_telegram_message(token, chat_id, message):
     """
@@ -68,7 +62,9 @@ def get_telegram_updates(token, offset=None):
     y evite procesar mensajes que ya fueron manejados en iteraciones anteriores.
     """
     url = f"https://api.telegram.org/bot{token}/getUpdates"
-    params = {'timeout': 30, 'offset': offset}
+    params = {'timeout': 30} # Tiempo máximo de espera para nuevas actualizaciones.
+    if offset:
+        params['offset'] = offset # Si se proporciona un offset, solo se obtienen mensajes posteriores a ese ID.
     try:
         response = requests.get(url, params=params)
         response.raise_for_status()
@@ -91,8 +87,10 @@ def send_keyboard_menu(token, chat_id, message_text="Selecciona una opción:"):
     keyboard = {
         'keyboard': [
             [{'text': '/beneficio'}, {'text': '/get_params'}],
-            [{'text': '/csv'}, {'text': '/help'}],
-            [{'text': '/vender BTCUSDT'}]
+            [{'text': '/csv'}, {'text': '/get_positions_file'}],
+            [{'text': '/vender BTCUSDT'}, {'text': '/vender ETHUSDT'}], # Añadido ETHUSDT para ejemplo
+            [{'text': '/convert_dust'}], # NUEVO: Botón para convertir dust
+            [{'text': '/help'}, {'text': '/hide_menu'}] # Añadido help y hide_menu
         ],
         'resize_keyboard': True,
         'one_time_keyboard': False
@@ -154,7 +152,10 @@ def set_telegram_commands_menu(token):
     url = f"https://api.telegram.org/bot{token}/setMyCommands"
     
     commands = [
-        {"command": "get_params", "description": "Muestra los parámetros actuales del bot"},
+        {"command": "start", "description": "Iniciar el bot y mostrar menú"},
+        {"command": "menu", "description": "Mostrar el menú de comandos"},
+        {"command": "hide_menu", "description": "Ocultar el menú de comandos"},
+        {"command": "get_params", "description": "Mostrar parámetros actuales del bot"},
         {"command": "set_tp", "description": "Establece el Take Profit (ej. /set_tp 0.03)"},
         {"command": "set_sl_fijo", "description": "Establece el Stop Loss Fijo (ej. /set_sl_fijo 0.02)"},
         {"command": "set_tsl", "description": "Establece el Trailing Stop Loss (ej. /set_tsl 0.015)"},
@@ -164,13 +165,12 @@ def set_telegram_commands_menu(token):
         {"command": "set_rsi_umbral", "description": "Establece el umbral de sobrecompra del RSI (ej. 70)"},
         {"command": "set_intervalo", "description": "Establece el intervalo del ciclo (ej. /set_intervalo 300)"},
         {"command": "set_breakeven_porcentaje", "description": "Mueve SL a breakeven (ej. /set_breakeven_porcentaje 0.005)"},
-        {"command": "csv", "description": "Genera y envía un informe CSV de transacciones"},
-        {"command": "beneficio", "description": "Muestra el beneficio total acumulado"},
-        {"command": "vender", "description": "Vende una posición manualmente (ej. /vender BTCUSDT)"},
-        {"command": "get_positions_file", "description": "Muestra el contenido del archivo de posiciones abiertas (para depuración)"},
-        {"command": "menu", "description": "Muestra el teclado de comandos principal"},
-        {"command": "hide_menu", "description": "Oculta el teclado de comandos"},
-        {"command": "help", "description": "Muestra este mensaje de ayuda"}
+        {"command": "csv", "description": "Generar y enviar informe CSV de transacciones"},
+        {"command": "beneficio", "description": "Mostrar beneficio total acumulado"},
+        {"command": "vender", "description": "Vender una posición (ej. /vender BTCUSDT)"},
+        {"command": "convert_dust", "description": "Convertir saldos pequeños (dust) a BNB"}, # NUEVO: Comando para convertir dust
+        {"command": "get_positions_file", "description": "Obtener archivo de posiciones abiertas"},
+        {"command": "help", "description": "Mostrar ayuda y comandos disponibles"}
     ]
 
     payload = {'commands': json.dumps(commands)}
@@ -231,6 +231,7 @@ def send_help_message(token, chat_id):
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n"
         "<b>Utilidades:</b>\n"
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
+        " - <code>/convert_dust</code>: Convierte saldos pequeños (dust) a BNB.\n" # NUEVO: Descripción del comando dust
         " - <code>/get_positions_file</code>: Muestra el contenido del archivo de posiciones abiertas (para depuración).\n"
         " - <code>/menu</code>: Muestra el teclado de comandos principal.\n"
         " - <code>/hide_menu</code>: Oculta el teclado de comandos.\n\n"
@@ -239,4 +240,3 @@ def send_help_message(token, chat_id):
         "<i>Recuerda usar valores decimales para porcentajes y enteros para períodos/umbrales.</i>"
     )
     send_telegram_message(token, chat_id, help_message)
-

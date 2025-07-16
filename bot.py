@@ -32,7 +32,6 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN") # Token único de tu bot de Tel
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") # ID del chat donde el bot enviará mensajes.
 
 # Archivos para guardar y cargar las posiciones del bot.
-# Aunque la gestión se hace en position_manager, la ruta se define aquí.
 OPEN_POSITIONS_FILE = "open_positions.json" # Nombre del archivo JSON para guardar las posiciones abiertas.
 
 # =================== CARGA DE PARÁMETROS DESDE config_manager ===================
@@ -64,11 +63,11 @@ client.API_URL = 'https://testnet.binance.vision/api' # Configura la URL de la A
 # Se carga desde el archivo de persistencia al inicio.
 posiciones_abiertas = position_manager.load_open_positions(STOP_LOSS_PORCENTAJE) # Carga las posiciones guardadas, aplicando el SL inicial.
 
-# Variables para la gestión de la comunicación con Telegram.
+# Variables para la gestión de la comunicación con Telegram
 last_update_id = 0 # ID del último mensaje procesado de Telegram para evitar duplicados.
 TELEGRAM_LISTEN_INTERVAL = 5 # Intervalo de tiempo en segundos para verificar nuevos comandos de Telegram.
 
-# Variables para la gestión de informes diarios.
+# Variables para la gestión de informes diarios
 transacciones_diarias = [] # Lista para almacenar las transacciones realizadas en el día actual.
 ultima_fecha_informe_enviado = None # Almacena la fecha del último informe diario enviado.
 last_trading_check_time = 0 # Marca de tiempo de la última vez que se ejecutó la lógica de trading principal.
@@ -84,12 +83,10 @@ def handle_telegram_commands():
     # Declara las variables globales que esta función puede modificar.
     global last_update_id, RIESGO_POR_OPERACION_PORCENTAJE, TAKE_PROFIT_PORCENTAJE, \
            STOP_LOSS_PORCENTAJE, TRAILING_STOP_PORCENTAJE, EMA_PERIODO, RSI_PERIODO, \
-           RSI_UMBRAL_SOBRECOMPRA, INTERVALO, bot_params, TOTAL_BENEFICIO_ACUMULADO, BREAKEVEN_PORCENTAJE
+           RSI_UMBRAL_SOBRECOMPRA, INTERVALO, bot_params, TOTAL_BENEFICIO_ACUMULADO
 
-    # Obtiene las actualizaciones (mensajes) de Telegram utilizando el telegram_handler.
     updates = telegram_handler.get_telegram_updates(TELEGRAM_BOT_TOKEN, last_update_id + 1)
 
-    # Si hay actualizaciones y la respuesta es exitosa.
     if updates and updates['ok']:
         for update in updates['result']: # Itera sobre cada actualización recibida.
             last_update_id = update['update_id'] # Actualiza el ID del último mensaje procesado.
@@ -219,12 +216,13 @@ def handle_telegram_commands():
                         if len(parts) == 2:
                             symbol_to_sell = parts[1].upper() # Obtiene el símbolo a vender.
                             if symbol_to_sell in SYMBOLS: # Verifica que el símbolo esté en la lista de monitoreo.
-                                # Llama a la función vender_por_comando del módulo trading_logic.
                                 trading_logic.vender_por_comando(
                                     client, symbol_to_sell, posiciones_abiertas, transacciones_diarias,
                                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE,
                                     TOTAL_BENEFICIO_ACUMULADO, bot_params, config_manager
                                 )
+                                # Actualizar TOTAL_BENEFICIO_ACUMULADO después de la venta
+                                TOTAL_BENEFICIO_ACUMULADO = bot_params['TOTAL_BENEFICIO_ACUMULADO']
                             else:
                                 telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Símbolo <b>{symbol_to_sell}</b> no reconocido o no monitoreado por el bot.")
                         else:
@@ -233,6 +231,16 @@ def handle_telegram_commands():
                         reporting_manager.send_beneficio_message(client, TOTAL_BENEFICIO_ACUMULADO, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
                     elif command == "/get_positions_file": # Muestra el contenido del archivo de posiciones abiertas (para depuración).
                         telegram_handler.send_positions_file_content(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE)
+                    elif command == "/convert_dust": # Comando para convertir saldos pequeños a BNB
+                        telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "⚙️ Intentando convertir saldos pequeños (dust) a BNB...")
+                        conversion_result = binance_utils.convert_dust_to_bnb(client)
+                        
+                        if conversion_result and conversion_result['status'] == 'success':
+                            telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"✅ {conversion_result['message']}")
+                        else:
+                            error_msg = conversion_result.get('message', 'Error desconocido al convertir dust.')
+                            telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ {error_msg}")
+                            logging.error(f"Fallo en la conversión de dust: {error_msg}")
                     else: # Comando no reconocido.
                         telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "Comando desconocido. Usa <code>/help</code> para ver los comandos disponibles.")
 
@@ -258,13 +266,13 @@ while True: # Bucle infinito que mantiene el bot en funcionamiento.
         handle_telegram_commands() # Llama a la función para procesar los comandos pendientes de Telegram.
         
         # --- Lógica del Informe Diario ---
-        hoy = time.strftime("%Y-%m-%d") # Obtiene la fecha actual en formato YYYY-MM-DD.
+        hoy = time.strftime("%Y-%m-%d")
 
         # Comprueba si es un nuevo día o si es la primera ejecución para enviar el informe diario.
         if ultima_fecha_informe_enviado is None or hoy != ultima_fecha_informe_enviado:
             if ultima_fecha_informe_enviado is not None: # Si ya se había enviado un informe antes (no es la primera ejecución).
                 telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"Preparando informe del día {ultima_fecha_informe_enviado}...")
-                reporting_manager.enviar_informe_diario(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, transacciones_diarias) # Envía el informe del día anterior.
+                reporting_manager.enviar_informe_diario(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, transacciones_diarias)
             
             ultima_fecha_informe_enviado = hoy # Actualiza la fecha del último informe enviado a la fecha actual.
             transacciones_diarias.clear() # Limpia la lista de transacciones diarias para el nuevo día.
@@ -277,10 +285,10 @@ while True: # Bucle infinito que mantiene el bot en funcionamiento.
 
             for symbol in SYMBOLS: # Itera sobre cada símbolo de trading configurado.
                 base = symbol.replace("USDT", "") # Extrae la criptomoneda base (ej. BTC de BTCUSDT).
-                saldo_base = binance_utils.obtener_saldo_moneda(client, base) # Obtiene el saldo disponible de la moneda base.
-                precio_actual = binance_utils.obtener_precio_actual(client, symbol) # Obtiene el precio actual del par.
                 
-                # Calcula la EMA y el RSI utilizando el módulo trading_logic.
+                saldo_base = binance_utils.obtener_saldo_moneda(client, base) 
+                precio_actual = binance_utils.obtener_precio_actual(client, symbol)
+                
                 ema_valor, rsi_valor = trading_logic.calcular_ema_rsi(client, symbol, EMA_PERIODO, RSI_PERIODO)
 
                 if ema_valor is None or rsi_valor is None: # Si no se pudieron calcular los indicadores, salta este símbolo.
@@ -338,7 +346,7 @@ while True: # Bucle infinito que mantiene el bot en funcionamiento.
 
                 # --- LÓGICA DE VENTA (Take Profit, Stop Loss Fijo, Trailing Stop Loss, Breakeven) ---
                 elif symbol in posiciones_abiertas: # Si ya hay una posición abierta para este símbolo.
-                    posicion = posiciones_abiertas[symbol] # Obtiene los detalles de la posición.
+                    posicion = posiciones_abiertas[symbol]
                     precio_compra = posicion['precio_compra'] # Precio al que se compró.
                     cantidad_en_posicion = posicion['cantidad_base'] # Cantidad de la criptomoneda en la posición.
                     max_precio_alcanzado = posicion['max_precio_alcanzado'] # Precio máximo que ha alcanzado la criptomoneda desde la compra.
@@ -367,7 +375,7 @@ while True: # Bucle infinito que mantiene el bot en funcionamiento.
 
                     # --- Niveles de Salida ---
                     # Obtiene el nivel de Stop Loss actual (fijo o breakeven).
-                    current_stop_loss_level = posicion.get('stop_loss_fijo_nivel_actual', stop_loss_fijo_nivel)
+                    current_stop_loss_level = posiciones_abiertas[symbol].get('stop_loss_fijo_nivel_actual', stop_loss_fijo_nivel)
 
                     take_profit_nivel = precio_compra * (1 + TAKE_PROFIT_PORCENTAJE) # Calcula el nivel de Take Profit.
                     trailing_stop_nivel = max_precio_alcanzado * (1 - TRAILING_STOP_PORCENTAJE) # Calcula el nivel de Trailing Stop.
@@ -408,7 +416,8 @@ while True: # Bucle infinito que mantiene el bot en funcionamiento.
                             orden = trading_logic.vender(
                                 client, symbol, cantidad_a_vender_real, posiciones_abiertas,
                                 TOTAL_BENEFICIO_ACUMULADO, bot_params, transacciones_diarias,
-                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE, config_manager,motivo_venta
+                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE, config_manager,
+                                motivo_venta # Pasa el motivo_venta a la función vender
                             )
                             # Actualizar TOTAL_BENEFICIO_ACUMULADO después de la venta, ya que trading_logic lo modifica en bot_params.
                             TOTAL_BENEFICIO_ACUMULADO = bot_params['TOTAL_BENEFICIO_ACUMULADO']
@@ -429,19 +438,17 @@ while True: # Bucle infinito que mantiene el bot en funcionamiento.
                 mensaje_simbolo += "\n" + binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)
                 general_message += mensaje_simbolo + "\n\n" # Acumula el mensaje del símbolo al mensaje general.
 
-            # Envía el mensaje general con el resumen de todos los símbolos a Telegram.
             telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
             last_trading_check_time = time.time() # Actualiza la marca de tiempo del último chequeo de trading.
 
         # --- GESTIÓN DEL TIEMPO ENTRE CICLOS ---
         time_elapsed_overall = time.time() - start_time_cycle # Calcula el tiempo transcurrido en el ciclo actual.
-        sleep_duration = max(0, TELEGRAM_LISTEN_INTERVAL - time_elapsed_overall) # Calcula el tiempo de espera restante.
+        sleep_duration = max(0, TELEGRAM_LISTEN_INTERVAL - time_elapsed_overall) # Calcula el tiempo de espera restante para el ciclo de trading.
         print(f"⏳ Próxima revisión en {sleep_duration:.0f} segundos (Revisando comandos cada {TELEGRAM_LISTEN_INTERVAL}s)...\n")
         time.sleep(sleep_duration) # Pausa el bot por el tiempo restante para mantener el intervalo.
 
     except Exception as e: # Captura cualquier excepción general en el bucle principal.
-        logging.error(f"Error general en el bot: {e}", exc_info=True) # Registra el error completo.
-        # Envía un mensaje de error a Telegram con el estado actual de los saldos.
+        logging.error(f"Error general en el bot: {e}", exc_info=True) 
         telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error general en el bot: {e}\n\n{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}") 
         print(f"❌ Error general en el bot: {e}") # Imprime el error en la consola.
         time.sleep(INTERVALO) # Espera el intervalo completo antes de intentar el siguiente ciclo en caso de error.
