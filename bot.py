@@ -408,7 +408,7 @@ while True: # Bucle infinito que mantiene el bot en funcionamiento.
                             orden = trading_logic.vender(
                                 client, symbol, cantidad_a_vender_real, posiciones_abiertas,
                                 TOTAL_BENEFICIO_ACUMULADO, bot_params, transacciones_diarias,
-                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE, config_manager
+                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE, config_manager,motivo_venta
                             )
                             # Actualizar TOTAL_BENEFICIO_ACUMULADO después de la venta, ya que trading_logic lo modifica en bot_params.
                             TOTAL_BENEFICIO_ACUMULADO = bot_params['TOTAL_BENEFICIO_ACUMULADO']

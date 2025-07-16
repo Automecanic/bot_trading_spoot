@@ -176,7 +176,7 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
         telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Error en compra de {symbol}: {e}")
         return None
 
-def vender(client, symbol, cantidad, posiciones_abiertas, total_beneficio_acumulado, bot_params, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file, config_manager_ref):
+def vender(client, symbol, cantidad, posiciones_abiertas, total_beneficio_acumulado, bot_params, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file, config_manager_ref,motivo_venta="Desconocido"):
     """
     Ejecuta una orden de venta de mercado en Binance para un símbolo y cantidad dados.
     Calcula la ganancia/pérdida de la operación, actualiza el beneficio total acumulado,
@@ -258,10 +258,11 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
     telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"⚙️ Intentando vender <b>{cantidad_a_vender_ajustada:.6f} {base_asset}</b> de <b>{symbol}</b> por comando...")
     logging.info(f"Comando de venta manual recibido para {symbol}. Cantidad a vender: {cantidad_a_vender_ajustada}")
 
-    orden = vender(client, symbol, cantidad_a_vender_ajustada, posiciones_abiertas, total_beneficio_acumulado, bot_params, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file, config_manager_ref)
+    orden = vender(client, symbol, cantidad_a_vender_ajustada, posiciones_abiertas, total_beneficio_acumulado, bot_params, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file, config_manager_ref,"venta por comando")
 
     if orden:
         logging.info(f"Venta de {symbol} ejecutada con éxito por comando.")
+        telegram_handler.send_telegram_message(f"Venta de {symbol} ejecutada con éxito por comando.")
     else:
         telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Fallo al ejecutar la venta de <b>{symbol}</b> por comando. Revisa los logs.")
         logging.error(f"Fallo al ejecutar la venta de {symbol} por comando.")
