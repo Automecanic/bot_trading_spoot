@@ -120,57 +120,50 @@ def convert_dust_to_bnb(client):
         account_info = client.get_account()
         balances = account_info['balances']
 
-        # Obtener todos los símbolos de trading válidos en Binance para evitar errores de "Invalid symbol"
-        exchange_info = client.get_exchange_info()
-        valid_symbols = {s['symbol'] for s in exchange_info['symbols']}
+        # No necesitamos obtener todos los símbolos de trading válidos aquí,
+        # ya que client.transfer_dust() manejará los activos no elegibles.
         
         for balance in balances:
             asset = balance['asset']
             free = float(balance['free'])
             
-            # Solo considerar activos que no son USDT o BNB y que tienen un saldo libre > 0
+            # Considerar cualquier activo que no sea USDT o BNB y tenga un saldo libre positivo.
+            # Dejaremos que la API de Binance determine si es "dust" elegible.
             if asset not in ["USDT", "BNB"] and free > 0:
-                symbol_pair = asset + "USDT"
-                
-                # Verificar si el par assetUSDT es un símbolo de trading válido
-                if symbol_pair in valid_symbols:
-                    try:
-                        price_usdt = obtener_precio_actual(client, symbol_pair)
-                        value_usdt = free * price_usdt
-                        
-                        # Umbral de "dust" en USDT (ej. menos de 0.01 USDT)
-                        # Este umbral es una aproximación, Binance tiene sus propios umbrales.
-                        if value_usdt > 0 and value_usdt < 0.01: # Asegurarse de que no sea 0 y sea pequeño
-                            dust_assets.append(asset)
-                            logging.info(f"Identificado {free:.8f} {asset} como posible dust (valor: {value_usdt:.4f} USDT).")
-                    except Exception as ex:
-                        # Si no se puede obtener el precio en USDT (ej. error temporal), se ignora.
-                        logging.debug(f"No se pudo obtener el precio de {asset} en USDT para verificar dust: {ex}")
-                        pass
-                else:
-                    logging.debug(f"El par {symbol_pair} no es un símbolo de trading válido. Ignorando para conversión de dust.")
+                dust_assets.append(asset)
+                logging.debug(f"Añadiendo {free:.8f} {asset} a la lista de posibles activos para convertir a dust.")
 
         if not dust_assets:
-            logging.info("No se encontraron activos elegibles para convertir a BNB (dust).")
-            return {"status": "success", "message": "No se encontraron activos elegibles para convertir a BNB (dust)."}
+            logging.info("No se encontraron activos con saldo positivo (excluyendo USDT/BNB) para intentar convertir a BNB (dust).")
+            return {"status": "success", "message": "No se encontraron activos con saldo positivo (excluyendo USDT/BNB) para intentar convertir a BNB (dust)."}
 
         logging.info(f"Intentando convertir los siguientes activos a BNB: {', '.join(dust_assets)}")
         
-        # Realizar la transferencia de dust
+        # Realizar la transferencia de dust. Binance API ignorará los activos no elegibles.
         result = client.transfer_dust(asset=dust_assets)
         
-        if result and result['totalServiceCharge'] is not None:
+        if result and 'totalServiceCharge' in result and result['totalServiceCharge'] is not None:
             total_transfered = float(result['totalTransfered'])
             total_service_charge = float(result['totalServiceCharge'])
             
-            message = (f"✅ Conversión de dust a BNB exitosa!\n"
-                       f"Total convertido a BNB: {total_transfered:.8f}\n"
-                       f"Comisión total: {total_service_charge:.8f} BNB\n"
-                       f"Activos convertidos: {[item['asset'] for item in result['transferResult'] if item['amount'] > 0]}")
-            logging.info(message)
-            return {"status": "success", "message": message, "result": result}
+            converted_assets_info = [
+                f"{float(item['amount']) if 'amount' in item else 'N/A'} {item['asset']}"
+                for item in result.get('transferResult', []) if 'amount' in item and float(item['amount']) > 0
+            ]
+            
+            if converted_assets_info:
+                message = (f"✅ Conversión de dust a BNB exitosa!\n"
+                           f"Total convertido a BNB: {total_transfered:.8f}\n"
+                           f"Comisión total: {total_service_charge:.8f} BNB\n"
+                           f"Activos convertidos: {', '.join(converted_assets_info)}")
+                logging.info(message)
+                return {"status": "success", "message": message, "result": result}
+            else:
+                message = f"⚠️ Se intentó la conversión de dust, pero ningún activo fue elegible por Binance. Respuesta de la API: {result}"
+                logging.warning(message)
+                return {"status": "failed", "message": message, "result": result}
         else:
-            message = f"⚠️ No se pudo convertir dust a BNB. Respuesta de la API: {result}"
+            message = f"⚠️ No se pudo convertir dust a BNB. Respuesta inesperada de la API: {result}"
             logging.warning(message)
             return {"status": "failed", "message": message, "result": result}
 
