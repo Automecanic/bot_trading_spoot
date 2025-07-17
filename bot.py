@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 API_KEY = os.getenv("BINANCE_API_KEY") # Clave API para autenticación en Binance.
 API_SECRET = os.getenv("BINANCE_API_SECRET") # Clave secreta para autenticación en Binance.
 
-# NUEVO: Log para depurar la carga de la API Key
+# Log para depurar la carga de la API Key
 if API_KEY:
     logging.info(f"API_KEY cargada (primeros 5 caracteres): {API_KEY[:5]}*****")
 else:
@@ -53,7 +53,8 @@ bot_params = config_manager.load_parameters() # Carga la configuración del bot 
 
 # Asignar los valores del diccionario cargado a las variables globales del bot.
 # Estos parámetros controlan la estrategia de trading y el comportamiento del bot.
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"] # Lista de pares de trading a monitorear.
+# Lista de pares de trading a monitorear (se filtrará más abajo).
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"]
 INTERVALO = bot_params["INTERVALO"] # Intervalo de tiempo en segundos entre cada ciclo de trading principal.
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"] # Porcentaje del capital total a arriesgar por operación.
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"] # Porcentaje de ganancia para cerrar una posición (Take Profit).
@@ -70,6 +71,27 @@ BREAKEVEN_PORCENTAJE = bot_params["BREAKEVEN_PORCENTAJE"] # Porcentaje de gananc
 # Inicializa el cliente de la API de Binance.
 client = Client(API_KEY, API_SECRET, testnet=True) # Crea una instancia del cliente de Binance con las claves API.
 client.API_URL = 'https://testnet.binance.vision/api' # Configura la URL de la API para usar la red de prueba (Testnet) de Binance.
+
+# NUEVO: Filtrar la lista de SYMBOLS para incluir solo los válidos en Binance
+logging.info("Verificando símbolos de trading válidos en Binance Testnet...")
+try:
+    exchange_info = client.get_exchange_info()
+    valid_binance_symbols = {s['symbol'] for s in exchange_info['symbols']}
+    
+    filtered_symbols = []
+    for symbol in SYMBOLS:
+        if symbol in valid_binance_symbols:
+            filtered_symbols.append(symbol)
+        else:
+            logging.warning(f"⚠️ El símbolo {symbol} no es válido en Binance Testnet y será ignorado.")
+    SYMBOLS = filtered_symbols
+    logging.info(f"Símbolos de trading activos: {SYMBOLS}")
+    if not SYMBOLS:
+        logging.error("❌ No hay símbolos de trading válidos configurados. El bot no operará.")
+except Exception as e:
+    logging.error(f"❌ Error al obtener información de intercambio de Binance para filtrar símbolos: {e}", exc_info=True)
+    logging.error("Continuando con la lista de símbolos original, lo que puede causar errores.")
+
 
 # Diccionario para almacenar las posiciones que el bot tiene abiertas y está gestionando.
 # Se carga desde el archivo de persistencia al inicio.
@@ -243,7 +265,8 @@ def handle_telegram_commands():
                     elif command == "/vender": # Permite vender una posición manualmente.
                         if len(parts) == 2:
                             symbol_to_sell = parts[1].upper() # Obtiene el símbolo a vender.
-                            if symbol_to_sell in SYMBOLS: # Verifica que el símbolo esté en la lista de monitoreo.
+                            # Asegurarse de que el símbolo esté en la lista de monitoreo FILTRADA
+                            if symbol_to_sell in SYMBOLS: 
                                 with shared_data_lock: # Protege el acceso a posiciones_abiertas y variables de beneficio
                                     trading_logic.vender_por_comando(
                                         client, symbol_to_sell, posiciones_abiertas, transacciones_diarias,
@@ -340,6 +363,9 @@ try:
             for symbol in SYMBOLS: # Itera sobre cada símbolo de trading configurado.
                 base = symbol.replace("USDT", "") # Extrae la criptomoneda base (ej. BTC de BTCUSDT).
                 
+                # Las siguientes llamadas a binance_utils y trading_logic.calcular_ema_rsi
+                # no modifican directamente las variables globales compartidas, solo las leen
+                # o interactúan con el cliente de Binance, que es thread-safe en sus llamadas API.
                 saldo_base = binance_utils.obtener_saldo_moneda(client, base) 
                 precio_actual = binance_utils.obtener_precio_actual(client, symbol)
                 
