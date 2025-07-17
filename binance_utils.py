@@ -118,27 +118,37 @@ def convert_dust_to_bnb(client):
     try:
         dust_assets = []
         account_info = client.get_account()
-        for balance in account_info['balances']:
+        balances = account_info['balances']
+
+        # Obtener todos los símbolos de trading válidos en Binance para evitar errores de "Invalid symbol"
+        exchange_info = client.get_exchange_info()
+        valid_symbols = {s['symbol'] for s in exchange_info['symbols']}
+        
+        for balance in balances:
             asset = balance['asset']
             free = float(balance['free'])
             
             # Solo considerar activos que no son USDT o BNB y que tienen un saldo libre > 0
             if asset not in ["USDT", "BNB"] and free > 0:
-                try:
-                    # Intentar obtener el valor en USDT para determinar si es "dust"
-                    symbol_pair = asset + "USDT"
-                    price_usdt = obtener_precio_actual(client, symbol_pair)
-                    value_usdt = free * price_usdt
-                    
-                    # Umbral de "dust" en USDT (ej. menos de 0.01 USDT)
-                    # Este umbral es una aproximación, Binance tiene sus propios umbrales.
-                    if value_usdt > 0 and value_usdt < 0.01: # Asegurarse de que no sea 0 y sea pequeño
-                        dust_assets.append(asset)
-                        logging.info(f"Identificado {free:.8f} {asset} como posible dust (valor: {value_usdt:.4f} USDT).")
-                except Exception as ex:
-                    # Si no se puede obtener el precio en USDT (ej. par no existe), se ignora.
-                    logging.debug(f"No se pudo obtener el precio de {asset} en USDT para verificar dust: {ex}")
-                    pass
+                symbol_pair = asset + "USDT"
+                
+                # Verificar si el par assetUSDT es un símbolo de trading válido
+                if symbol_pair in valid_symbols:
+                    try:
+                        price_usdt = obtener_precio_actual(client, symbol_pair)
+                        value_usdt = free * price_usdt
+                        
+                        # Umbral de "dust" en USDT (ej. menos de 0.01 USDT)
+                        # Este umbral es una aproximación, Binance tiene sus propios umbrales.
+                        if value_usdt > 0 and value_usdt < 0.01: # Asegurarse de que no sea 0 y sea pequeño
+                            dust_assets.append(asset)
+                            logging.info(f"Identificado {free:.8f} {asset} como posible dust (valor: {value_usdt:.4f} USDT).")
+                    except Exception as ex:
+                        # Si no se puede obtener el precio en USDT (ej. error temporal), se ignora.
+                        logging.debug(f"No se pudo obtener el precio de {asset} en USDT para verificar dust: {ex}")
+                        pass
+                else:
+                    logging.debug(f"El par {symbol_pair} no es un símbolo de trading válido. Ignorando para conversión de dust.")
 
         if not dust_assets:
             logging.info("No se encontraron activos elegibles para convertir a BNB (dust).")
@@ -146,7 +156,7 @@ def convert_dust_to_bnb(client):
 
         logging.info(f"Intentando convertir los siguientes activos a BNB: {', '.join(dust_assets)}")
         
-        # Corregido: Usar client.transfer_dust() en lugar de client.dust_transfer()
+        # Realizar la transferencia de dust
         result = client.transfer_dust(asset=dust_assets)
         
         if result and result['totalServiceCharge'] is not None:
