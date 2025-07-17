@@ -6,7 +6,7 @@ import csv # Importa el módulo csv para trabajar con archivos CSV (generar info
 from binance.client import Client # Importa la clase Client del SDK de Binance para interactuar con la API.
 from binance.enums import * # Importa todas las enumeraciones de Binance (ej. KLINE_INTERVAL_1MINUTE) para mayor comodidad.
 from datetime import datetime, timedelta # Importa datetime para trabajar con fechas y horas, y timedelta para cálculos de tiempo.
-import threading # NUEVO: Importa el módulo threading para trabajar con hilos.
+import threading # Importa el módulo threading para trabajar con hilos.
 
 # Importa los módulos refactorizados que contienen la lógica modularizada del bot.
 import config_manager # Módulo para gestionar la configuración del bot (cargar/guardar parámetros).
@@ -26,6 +26,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Se obtienen de las variables de entorno para mayor seguridad.
 API_KEY = os.getenv("BINANCE_API_KEY") # Clave API para autenticación en Binance.
 API_SECRET = os.getenv("BINANCE_API_SECRET") # Clave secreta para autenticación en Binance.
+
+# NUEVO: Log para depurar la carga de la API Key
+if API_KEY:
+    logging.info(f"API_KEY cargada (primeros 5 caracteres): {API_KEY[:5]}*****")
+else:
+    logging.warning("API_KEY no cargada desde las variables de entorno.")
+if API_SECRET:
+    logging.info(f"API_SECRET cargada (primeros 5 caracteres): {API_SECRET[:5]}*****")
+else:
+    logging.warning("API_SECRET no cargada desde las variables de entorno.")
+
 
 # Token de tu bot de Telegram y Chat ID para enviar mensajes.
 # Se obtienen de las variables de entorno.
@@ -73,7 +84,7 @@ transacciones_diarias = [] # Lista para almacenar las transacciones realizadas e
 ultima_fecha_informe_enviado = None # Almacena la fecha del último informe diario enviado.
 last_trading_check_time = 0 # Marca de tiempo de la última vez que se ejecutó la lógica de trading principal.
 
-# NUEVO: Objeto Lock para proteger el acceso a variables compartidas entre hilos
+# Objeto Lock para proteger el acceso a variables compartidas entre hilos
 # Este bloqueo se usará para asegurar que solo un hilo acceda o modifique
 # variables como bot_params, posiciones_abiertas, TOTAL_BENEFICIO_ACUMULADO, transacciones_diarias.
 shared_data_lock = threading.Lock()
@@ -272,7 +283,7 @@ def handle_telegram_commands():
                     logging.error(f"Error procesando comando '{text}': {ex}", exc_info=True) # Registra el error completo.
                     telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error interno al procesar comando: {ex}") # Envía un mensaje de error a Telegram.
 
-# NUEVO: Función que se ejecutará en el hilo separado para escuchar Telegram
+# Función que se ejecutará en el hilo separado para escuchar Telegram
 def telegram_listener(stop_event):
     """
     Función que se ejecuta en un hilo separado para escuchar y procesar comandos de Telegram.
@@ -297,7 +308,7 @@ telegram_handler.set_telegram_commands_menu(TELEGRAM_BOT_TOKEN)
 
 logging.info("Bot iniciado. Esperando comandos y monitoreando el mercado...") # Mensaje de inicio del bot.
 
-# NUEVO: Crear y arrancar el hilo de Telegram
+# Crear y arrancar el hilo de Telegram
 telegram_stop_event = threading.Event() # Crea un evento para señalar al hilo de Telegram que debe detenerse.
 telegram_thread = threading.Thread(target=telegram_listener, args=(telegram_stop_event,)) # Crea el hilo, pasando la función y el evento.
 telegram_thread.start() # Inicia el hilo en segundo plano.
@@ -329,9 +340,6 @@ try:
             for symbol in SYMBOLS: # Itera sobre cada símbolo de trading configurado.
                 base = symbol.replace("USDT", "") # Extrae la criptomoneda base (ej. BTC de BTCUSDT).
                 
-                # Las siguientes llamadas a binance_utils y trading_logic.calcular_ema_rsi
-                # no modifican directamente las variables globales compartidas, solo las leen
-                # o interactúan con el cliente de Binance, que es thread-safe en sus llamadas API.
                 saldo_base = binance_utils.obtener_saldo_moneda(client, base) 
                 precio_actual = binance_utils.obtener_precio_actual(client, symbol)
                 
