@@ -106,7 +106,7 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
 
     # Asegurarse de que la cantidad ajustada no exceda el saldo disponible
     max_cantidad_posible = saldo_usdt / precio_actual
-    cantidad_final = min(cantidad_ajustada, max_cantidad_possible)
+    cantidad_final = min(cantidad_ajustada, max_cantidad_posible) # Corregido: max_cantidad_possible a max_cantidad_posible
     
     # Asegurar que la cantidad final sea un múltiplo del step_size
     cantidad_final = binance_utils.ajustar_cantidad(cantidad_final, step_size)
