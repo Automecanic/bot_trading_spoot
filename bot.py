@@ -30,12 +30,17 @@ API_SECRET = os.getenv("BINANCE_API_SECRET") # Clave secreta para autenticación
 # Log para depurar la carga de la API Key
 if API_KEY:
     logging.info(f"API_KEY cargada (primeros 5 caracteres): {API_KEY[:5]}*****")
+    print(f"API_KEY cargada (primeros 5 caracteres): {API_KEY[:5]}*****")
 else:
     logging.warning("API_KEY no cargada desde las variables de entorno.")
+    print("API_KEY no cargada desde las variables de entorno.")
 if API_SECRET:
     logging.info(f"API_SECRET cargada (primeros 5 caracteres): {API_SECRET[:5]}*****")
+    print(f"API_SECRET cargada (primeros 5 caracteres): {API_SECRET[:5]}*****")
 else:
     logging.warning("API_SECRET no cargada desde las variables de entorno.")
+    print("API_SECRET no cargada desde las variables de entorno.")
+
 
 
 # Token de tu bot de Telegram y Chat ID para enviar mensajes.
