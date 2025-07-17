@@ -1,269 +1,310 @@
 import logging
-from binance.client import Client
+import time
+import json
 from binance.enums import *
-from datetime import datetime
-import binance_utils
-import telegram_handler
-import config_manager
-import position_manager
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def calcular_ema(precios_cierre, periodo):
-    """
-    Calcula la Media Móvil Exponencial (EMA) para una lista de precios de cierre.
-    periodo: Número de períodos para el cálculo de la EMA (ej. 10 para EMA de 10 períodos).
-    """
-    if len(precios_cierre) < periodo:
-        return None
-    
-    ema = sum(precios_cierre[:periodo]) / periodo
-    multiplier = 2 / (periodo + 1)
-    
-    for i in range(periodo, len(precios_cierre)):
-        ema = ((precios_cierre[i] - ema) * multiplier) + ema
-    return ema
-
-def calcular_rsi(precios_cierre, periodo):
-    """
-    Calcula el Índice de Fuerza Relativa (RSI) para una lista de precios de cierre.
-    El RSI es un oscilador de momentum que mide la velocidad y el cambio de los movimientos de los precios.
-    periodo: Número de períodos para el cálculo del RSI (ej. 14 para RSI de 14 períodos).
-    """
-    if len(precios_cierre) < periodo + 1:
-        return None
-
-    precios_diff = [precios_cierre[i] - precios_cierre[i-1] for i in range(1, len(precios_cierre))]
-    
-    ganancias = [d if d > 0 else 0 for d in precios_diff]
-    perdidas = [-d if d < 0 else 0 for d in precios_diff]
-
-    avg_ganancia = sum(ganancias[:periodo]) / periodo
-    avg_perdida = sum(perdidas[:periodo]) / periodo
-
-    if avg_perdida == 0:
-        return 100
-    
-    rs = avg_ganancia / avg_perdida
-    rsi = 100 - (100 / (1 + rs))
-
-    for i in range(periodo, len(ganancias)):
-        avg_ganancia = ((avg_ganancia * (periodo - 1)) + ganancias[i]) / periodo
-        avg_perdida = ((avg_perdida * (periodo - 1)) + perdidas[i]) / periodo
-        
-        if avg_perdida == 0:
-            rsi = 100
-        else:
-            rs = avg_ganancia / avg_perdida
-            rsi = 100 - (100 / (1 + rs))
-    return rsi
+# Importa módulos auxiliares que trading_logic necesita.
+# Asumimos que estos módulos existen y están correctamente configurados.
+import binance_utils
+import position_manager
+import telegram_handler
+import config_manager # Para guardar bot_params actualizado
 
 def calcular_ema_rsi(client, symbol, ema_periodo, rsi_periodo):
     """
-    Obtiene los datos de las velas (klines) de Binance para un símbolo dado
-    y luego calcula la EMA y el RSI utilizando esos datos.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Calcula la Media Móvil Exponencial (EMA) y el Índice de Fuerza Relativa (RSI)
+    para un símbolo dado.
+    Requiere el cliente de Binance y los períodos para cada indicador.
     """
     try:
-        limit = max(ema_periodo, rsi_periodo) + 10
-        klines = client.get_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE, limit=limit)
+        # Obtener datos históricos (velas) para el cálculo de indicadores.
+        # Se obtienen 100 velas para asegurar suficientes datos para EMA y RSI.
+        klines = client.get_historical_klines(symbol, KLINE_INTERVAL_1MINUTE, "100 minutes ago UTC")
         
-        precios_cierre = [float(kline[4]) for kline in klines]
+        # Extraer los precios de cierre de las velas.
+        close_prices = [float(k[4]) for k in klines]
+
+        if len(close_prices) < max(ema_periodo, rsi_periodo):
+            logging.warning(f"⚠️ No hay suficientes datos para calcular EMA/RSI para {symbol}. Se necesitan al menos {max(ema_periodo, rsi_periodo)} velas.")
+            return None, None
+
+        # Calcular EMA
+        # La EMA se calcula aplicando una fórmula recursiva.
+        ema_values = []
+        if ema_periodo > 0:
+            smoothing_factor = 2 / (ema_periodo + 1)
+            ema = close_prices[0] # Inicializar EMA con el primer precio de cierre
+            for i in range(1, len(close_prices)):
+                ema = (close_prices[i] * smoothing_factor) + (ema * (1 - smoothing_factor))
+                ema_values.append(ema)
+            ema_valor = ema_values[-1] if ema_values else None
+        else:
+            ema_valor = None
         
-        ema = calcular_ema(precios_cierre, ema_periodo)
-        rsi = calcular_rsi(precios_cierre, rsi_periodo)
-        
-        return ema, rsi
+        # Calcular RSI
+        # El RSI se calcula a partir de las ganancias y pérdidas promedio.
+        gains = []
+        losses = []
+        for i in range(1, len(close_prices)):
+            difference = close_prices[i] - close_prices[i-1]
+            if difference > 0:
+                gains.append(difference)
+                losses.append(0)
+            else:
+                gains.append(0)
+                losses.append(abs(difference))
+
+        if len(gains) < rsi_periodo:
+            logging.warning(f"⚠️ No hay suficientes datos para calcular RSI para {symbol}. Se necesitan al menos {rsi_periodo} cambios de precio.")
+            return ema_valor, None
+
+        avg_gain = sum(gains[:rsi_periodo]) / rsi_periodo
+        avg_loss = sum(losses[:rsi_periodo]) / rsi_periodo
+
+        for i in range(rsi_periodo, len(gains)):
+            avg_gain = ((avg_gain * (rsi_periodo - 1)) + gains[i]) / rsi_periodo
+            avg_loss = ((avg_loss * (rsi_periodo - 1)) + losses[i]) / rsi_periodo
+
+        rs = avg_gain / avg_loss if avg_loss != 0 else (2 if avg_gain > 0 else 1) # Evitar división por cero
+        rsi_valor = 100 - (100 / (1 + rs)) if avg_loss != 0 or avg_gain != 0 else 50 # Si ambos son cero, RSI es 50
+
+        return ema_valor, rsi_valor
+
     except Exception as e:
-        logging.error(f"❌ Error al obtener klines o calcular indicadores para {symbol}: {e}")
+        logging.error(f"❌ Error al calcular EMA/RSI para {symbol}: {e}", exc_info=True)
         return None, None
 
 def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_porcentaje, symbol, riesgo_por_operacion_porcentaje):
     """
-    Calcula la cantidad de criptomoneda a comprar basándose en el riesgo por operación
-    definido y el porcentaje de stop loss. También considera el mínimo nocional de Binance
-    y el saldo USDT disponible.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Calcula la cantidad de criptomoneda a comprar basándose en el saldo USDT disponible,
+    el precio actual, el stop loss y el porcentaje de riesgo por operación.
     """
     if precio_actual <= 0:
-        logging.warning("El precio actual es cero o negativo, no se puede calcular la cantidad a comprar.")
+        logging.warning("❌ Precio actual es cero o negativo. No se puede calcular la cantidad a comprar.")
         return 0.0
 
-    capital_total = saldo_usdt
-    riesgo_max_por_operacion_usdt = capital_total * riesgo_por_operacion_porcentaje
-    
-    diferencia_precio_sl = precio_actual * stop_loss_porcentaje
-    
-    if diferencia_precio_sl <= 0:
-        logging.warning("La diferencia de precio con el SL es cero o negativa, no se puede calcular la cantidad a comprar.")
+    # Calcular el capital a arriesgar en USDT
+    capital_a_riesgar_usdt = saldo_usdt * riesgo_por_operacion_porcentaje
+
+    # Calcular la pérdida máxima por unidad (si se alcanza el stop loss)
+    perdida_por_unidad = precio_actual * stop_loss_porcentaje
+
+    if perdida_por_unidad <= 0:
+        logging.warning("❌ Pérdida por unidad es cero o negativa. Revisa el stop_loss_porcentaje.")
         return 0.0
 
-    cantidad_a_comprar = riesgo_max_por_operacion_usdt / diferencia_precio_sl
-
-    step = binance_utils.get_step_size(client, symbol)
-    min_notional = 10.0
-
-    cantidad_ajustada = binance_utils.ajustar_cantidad(cantidad_a_comprar, step)
+    # Calcular la cantidad teórica basada en el riesgo
+    cantidad_teorica = capital_a_riesgar_usdt / perdida_por_unidad
     
-    if (cantidad_ajustada * precio_actual) < min_notional:
-        logging.warning(f"La cantidad calculada ({cantidad_ajustada:.6f} {symbol.replace('USDT', '')}) es demasiado pequeña para el mínimo nocional de {min_notional} USDT.")
-        min_cantidad_ajustada = binance_utils.ajustar_cantidad(min_notional / precio_actual, step)
-        if (min_cantidad_ajustada * precio_actual) <= saldo_usdt:
-            cantidad_ajustada = min_cantidad_ajustada
-            logging.info(f"Ajustando a la cantidad mínima nocional permitida: {cantidad_ajustada:.6f} {symbol.replace('USDT', '')}")
-        else:
-            logging.warning(f"No hay suficiente saldo USDT para comprar la cantidad mínima nocional de {symbol}.")
-            return 0.0
+    # Obtener el stepSize para el símbolo para ajustar la cantidad
+    step_size = binance_utils.get_step_size(client, symbol)
+    cantidad_ajustada = binance_utils.ajustar_cantidad(cantidad_teorica, step_size)
 
-    if (cantidad_ajustada * precio_actual) > saldo_usdt:
-        logging.warning(f"La cantidad ajustada ({cantidad_ajustada:.6f} {symbol.replace('USDT', '')}) excede el saldo disponible en USDT. Reduciendo a lo máximo posible.")
-        cantidad_max_posible = binance_utils.ajustar_cantidad(saldo_usdt / precio_actual, step)
-        if (cantidad_max_posible * precio_actual) >= min_notional:
-            cantidad_ajustada = cantidad_max_posible
-        else:
-            logging.warning(f"El saldo restante no permite comprar ni la cantidad mínima nocional de {symbol}.")
-            return 0.0
+    # Asegurarse de que la cantidad ajustada no exceda el saldo disponible
+    max_cantidad_posible = saldo_usdt / precio_actual
+    cantidad_final = min(cantidad_ajustada, max_cantidad_posible)
+    
+    # Asegurar que la cantidad final sea un múltiplo del step_size
+    cantidad_final = binance_utils.ajustar_cantidad(cantidad_final, step_size)
 
-    return cantidad_ajustada
+    # Binance tiene un valor mínimo para las órdenes, por ejemplo, 10 USDT
+    # Aunque la API no siempre lo expone directamente como un filtro fácil de obtener,
+    # podemos usar un umbral general o intentar obtener el MIN_NOTIONAL filter.
+    # Para simplificar, asumiremos un valor mínimo en USDT.
+    min_notional = 10.0 # Valor mínimo de la orden en USDT (ej. 10 USDT)
+    
+    if (cantidad_final * precio_actual) < min_notional:
+        logging.warning(f"⚠️ La cantidad calculada para {symbol} ({cantidad_final:.6f} {symbol.replace('USDT', '')}) resulta en un valor inferior al mínimo nocional ({min_notional} USDT).")
+        return 0.0
 
-def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file):
+    return cantidad_final
+
+def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje, transacciones_diarias, telegram_bot_token, telegram_chat_id, open_positions_file):
     """
-    Ejecuta una orden de compra de mercado en Binance para un símbolo y cantidad dados.
-    Registra la operación en los logs y en la lista de transacciones diarias.
-    Además, guarda la nueva posición en el archivo de persistencia.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Ejecuta una orden de compra a precio de mercado en Binance.
+    Registra la posición, la transacción y envía una notificación a Telegram.
     """
-    if cantidad <= 0:
-        logging.warning(f"⚠️ Intento de compra de {symbol} con cantidad no positiva: {cantidad}")
-        return None
     try:
-        order = client.order_market_buy(
-            symbol=symbol,
-            quantity=cantidad
-        )
-        logging.info(f"✅ ORDEN DE COMPRA EXITOSA para {symbol}: {order}")
+        # Ejecutar orden de compra a mercado
+        order = client.order_market_buy(symbol=symbol, quantity=cantidad)
         
-        if order and 'fills' in order and len(order['fills']) > 0:
+        # Procesar la respuesta de la orden
+        if order and order['status'] == 'FILLED':
             precio_ejecucion = float(order['fills'][0]['price'])
-            qty_ejecutada = float(order['fills'][0]['qty'])
+            cantidad_comprada_real = float(order['fills'][0]['qty'])
             
+            # Registrar la nueva posición
             posiciones_abiertas[symbol] = {
                 'precio_compra': precio_ejecucion,
-                'cantidad_base': qty_ejecutada,
+                'cantidad_base': cantidad_comprada_real,
                 'max_precio_alcanzado': precio_ejecucion,
+                'stop_loss_fijo_nivel_actual': precio_ejecucion * (1 - stop_loss_porcentaje),
                 'sl_moved_to_breakeven': False,
-                'stop_loss_fijo_nivel_actual': precio_ejecucion * (1 - stop_loss_porcentaje)
+                'timestamp_apertura': datetime.now().isoformat()
             }
-            try:
-                position_manager.save_open_positions_debounced(posiciones_abiertas)
-                logging.info(f"✅ Posiciones abiertas guardadas en {open_positions_file} (después de compra).")
-            except IOError as e:
-                logging.error(f"❌ Error al escribir en el archivo {open_positions_file} después de compra: {e}")
-            
-            transacciones_diarias.append({
-                'FechaHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'Símbolo': symbol,
-                'Tipo': 'COMPRA',
-                'Precio': precio_ejecucion,
-                'Cantidad': qty_ejecutada,
-                'GananciaPerdidaUSDT': 0.0,
-                'Motivo': 'Condiciones de entrada'
-            })
-        return order
+            position_manager.save_open_positions_debounced(posiciones_abiertas) # Guardar posiciones
+
+            # Registrar la transacción
+            transaccion = {
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'tipo': 'COMPRA',
+                'precio': precio_ejecucion,
+                'cantidad': cantidad_comprada_real,
+                'valor_usdt': precio_ejecucion * cantidad_comprada_real
+            }
+            transacciones_diarias.append(transaccion)
+
+            telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                                   f"🟢 COMPRA de <b>{symbol}</b> ejecutada a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad: {cantidad_comprada_real:.6f}")
+            logging.info(f"✅ COMPRA exitosa de {cantidad_comprada_real} {symbol} a {precio_ejecucion}")
+            return order
+        else:
+            telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                                   f"❌ Fallo al ejecutar COMPRA de <b>{symbol}</b>. Estado: {order.get('status', 'N/A')}")
+            logging.error(f"❌ Fallo al ejecutar COMPRA de {symbol}. Respuesta: {order}")
+            return None
     except Exception as e:
-        logging.error(f"❌ FALLO DE ORDEN DE COMPRA para {symbol} (Cantidad: {cantidad}): {e}")
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Error en compra de {symbol}: {e}")
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                               f"❌ Error al intentar COMPRA de <b>{symbol}</b>: {e}")
+        logging.error(f"❌ Error en la función comprar para {symbol}: {e}", exc_info=True)
         return None
 
-def vender(client, symbol, cantidad, posiciones_abiertas, total_beneficio_acumulado, bot_params, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file, config_manager_ref,motivo_venta="Desconocido"):
+def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_beneficio_acumulado, bot_params, transacciones_diarias, telegram_bot_token, telegram_chat_id, open_positions_file, config_manager, motivo_venta=""):
     """
-    Ejecuta una orden de venta de mercado en Binance para un símbolo y cantidad dados.
-    Calcula la ganancia/pérdida de la operación, actualiza el beneficio total acumulado,
-    elimina la posición del registro en memoria y guarda el estado en el archivo de persistencia.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Ejecuta una orden de venta a precio de mercado en Binance.
+    Actualiza el beneficio total, elimina la posición y envía una notificación a Telegram.
     """
-    if cantidad <= 0:
-        logging.warning(f"⚠️ Intento de venta de {symbol} con cantidad no positiva: {cantidad}")
-        return None
     try:
-        order = client.order_market_sell(
-            symbol=symbol,
-            quantity=cantidad
-        )
-        logging.info(f"✅ ORDEN DE VENTA EXITOSA para {symbol}: {order}")
+        # NUEVO: Obtener información del símbolo para verificar la cantidad mínima de la orden
+        info = client.get_symbol_info(symbol)
+        min_notional = 0.0 # Valor mínimo de la orden en USDT
+        min_qty = 0.0 # Cantidad mínima de la moneda base
         
-        ganancia_perdida_usdt = 0.0
-        precio_venta_ejecutada = float(order['fills'][0]['price']) if order and 'fills' in order and len(order['fills']) > 0 else 0.0
+        for f in info['filters']:
+            if f['filterType'] == 'MIN_NOTIONAL':
+                min_notional = float(f['minNotional'])
+            elif f['filterType'] == 'LOT_SIZE':
+                min_qty = float(f['minQty'])
+        
+        # Obtener el saldo real actual para este activo
+        saldo_real_activo = binance_utils.obtener_saldo_moneda(client, symbol.replace("USDT", ""))
+        
+        # Ajustar la cantidad a vender al step_size
+        cantidad_a_vender_ajustada = binance_utils.ajustar_cantidad(saldo_real_activo, binance_utils.get_step_size(client, symbol))
 
-        if symbol in posiciones_abiertas:
-            precio_compra = posiciones_abiertas[symbol]['precio_compra']
-            ganancia_perdida_usdt = (precio_venta_ejecutada - precio_compra) * cantidad
+        # Verificar si la cantidad ajustada es suficiente para una orden
+        if cantidad_a_vender_ajustada <= 0:
+            telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                                   f"⚠️ No hay <b>{symbol.replace('USDT', '')}</b> disponible para vender o la cantidad es demasiado pequeña para una orden.")
+            logging.warning(f"⚠️ No hay {symbol.replace('USDT', '')} disponible para vender o la cantidad es demasiado pequeña para una orden.")
+            return None
+        
+        # Verificar si el valor nocional es suficiente
+        precio_actual = binance_utils.obtener_precio_actual(client, symbol)
+        valor_nocional = cantidad_a_vender_ajustada * precio_actual
+
+        if valor_nocional < min_notional:
+            telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                                   f"⚠️ El valor de venta de <b>{symbol}</b> ({valor_nocional:.2f} USDT) es inferior al mínimo nocional requerido ({min_notional:.2f} USDT). No se puede vender.")
+            logging.warning(f"⚠️ El valor de venta de {symbol} ({valor_nocional:.2f} USDT) es inferior al mínimo nocional requerido ({min_notional:.2f} USDT).")
+            return None
             
-            # Actualiza el beneficio total acumulado y lo guarda a través del config_manager.
-            total_beneficio_acumulado += ganancia_perdida_usdt
+        # Ejecutar orden de venta a mercado
+        order = client.order_market_sell(symbol=symbol, quantity=cantidad_a_vender_ajustada)
+        
+        # Procesar la respuesta de la orden
+        if order and order['status'] == 'FILLED':
+            precio_ejecucion = float(order['fills'][0]['price'])
+            cantidad_vendida_real = float(order['fills'][0]['qty'])
+            
+            # Calcular beneficio/pérdida
+            posicion = posiciones_abiertas.pop(symbol) # Eliminar la posición del diccionario
+            precio_compra = posicion['precio_compra']
+            
+            ganancia_usdt = (precio_ejecucion - precio_compra) * cantidad_vendida_real
+            total_beneficio_acumulado += ganancia_usdt # Sumar al beneficio total
+
+            # Actualizar bot_params con el nuevo beneficio total
             bot_params['TOTAL_BENEFICIO_ACUMULADO'] = total_beneficio_acumulado
-            config_manager_ref.save_parameters(bot_params)
+            config_manager.save_parameters(bot_params) # Guardar los parámetros actualizados
 
-            posiciones_abiertas.pop(symbol)
-            try:
-                position_manager.save_open_positions_debounced(posiciones_abiertas)
-                logging.info(f"✅ Posiciones abiertas guardadas en {open_positions_file} (después de venta).")
-            except IOError as e:
-                logging.error(f"❌ Error al escribir en el archivo {open_positions_file} después de venta: {e}")
+            position_manager.save_open_positions_debounced(posiciones_abiertas) # Guardar posiciones actualizadas
 
-        transacciones_diarias.append({
-            'FechaHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'Símbolo': symbol,
-            'Tipo': 'VENTA',
-            'Precio': precio_venta_ejecutada,
-            'Cantidad': float(order['fills'][0]['qty']) if order and 'fills' in order and len(order['fills']) > 0 else 0.0,
-            'GananciaPerdidaUSDT': ganancia_perdida_usdt,
-            'Motivo': motivo_venta
-        })
-        return order
+            # Registrar la transacción
+            transaccion = {
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'tipo': 'VENTA',
+                'precio': precio_ejecucion,
+                'cantidad': cantidad_vendida_real,
+                'valor_usdt': precio_ejecucion * cantidad_vendida_real,
+                'ganancia_usdt': ganancia_usdt,
+                'motivo_venta': motivo_venta
+            }
+            transacciones_diarias.append(transaccion)
+
+            telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                                   f"🔴 VENTA de <b>{symbol}</b> ejecutada por <b>{motivo_venta}</b> a <b>{precio_ejecucion:.4f}</b> USDT. Ganancia: <b>{ganancia_usdt:.2f}</b> USDT.")
+            logging.info(f"✅ VENTA exitosa de {cantidad_vendida_real} {symbol} a {precio_ejecucion} por {motivo_venta}. Ganancia: {ganancia_usdt:.2f} USDT")
+            return order
+        else:
+            telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                                   f"❌ Fallo al ejecutar VENTA de <b>{symbol}</b>. Estado: {order.get('status', 'N/A')}")
+            logging.error(f"❌ Fallo al ejecutar VENTA de {symbol}. Respuesta: {order}")
+            return None
     except Exception as e:
-        logging.error(f"❌ FALLO DE ORDEN DE VENTA para {symbol} (Cantidad: {cantidad}): {e}")
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Error en venta de {symbol}: {e}")
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                               f"❌ Error al intentar VENTA de <b>{symbol}</b>: {e}")
+        logging.error(f"❌ Error en la función vender para {symbol}: {e}", exc_info=True)
         return None
 
-def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file, total_beneficio_acumulado, bot_params, config_manager_ref):
+def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diarias, telegram_bot_token, telegram_chat_id, open_positions_file, total_beneficio_acumulado, bot_params, config_manager):
     """
-    Intenta vender una posición abierta para un símbolo específico,
-    activada por un comando de Telegram (ej. /vender BTCUSDT).
-    Verifica si el bot tiene una posición registrada y si hay saldo real en Binance para vender.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Permite vender una posición manualmente a través de un comando de Telegram.
     """
     if symbol not in posiciones_abiertas:
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ No hay una posición abierta para <b>{symbol}</b> que gestionar por comando.")
-        logging.warning(f"Intento de venta por comando para {symbol}, pero no hay posición abierta.")
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay una posición abierta para <b>{symbol}</b>.")
         return
 
     base_asset = symbol.replace("USDT", "")
-    cantidad_en_posicion = binance_utils.obtener_saldo_moneda(client, base_asset)
-
-    if cantidad_en_posicion <= 0:
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ No hay saldo disponible de <b>{base_asset}</b> para vender.")
-        logging.warning(f"Intento de venta por comando para {symbol}, pero el saldo es 0.")
+    saldo_real_activo = binance_utils.obtener_saldo_moneda(client, base_asset)
+    
+    if saldo_real_activo <= 0:
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay saldo de <b>{base_asset}</b> en tu cuenta para vender.")
         return
 
-    step = binance_utils.get_step_size(client, symbol)
-    cantidad_a_vender_ajustada = binance_utils.ajustar_cantidad(cantidad_en_posicion, step)
+    # Ajustar la cantidad a vender al step_size
+    cantidad_a_vender_ajustada = binance_utils.ajustar_cantidad(saldo_real_activo, binance_utils.get_step_size(client, symbol))
 
-    if cantidad_a_vender_ajustada <= 0:
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ La cantidad de <b>{base_asset}</b> a vender es demasiado pequeña o inválida.")
-        logging.warning(f"Cantidad a vender ajustada para {symbol} es <= 0: {cantidad_a_vender_ajustada}")
+    # NUEVO: Verificar si la cantidad ajustada es suficiente para una orden
+    info = client.get_symbol_info(symbol)
+    min_notional = 0.0
+    for f in info['filters']:
+        if f['filterType'] == 'MIN_NOTIONAL':
+            min_notional = float(f['minNotional'])
+            break
+    
+    precio_actual = binance_utils.obtener_precio_actual(client, symbol)
+    valor_nocional = cantidad_a_vender_ajustada * precio_actual
+
+    if cantidad_a_vender_ajustada <= 0 or valor_nocional < min_notional:
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
+                                               f"⚠️ La cantidad de <b>{base_asset}</b> disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta. Mínimo nocional: {min_notional:.2f} USDT.")
+        logging.warning(f"⚠️ La cantidad de {base_asset} disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta.")
         return
 
-    telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"⚙️ Intentando vender <b>{cantidad_a_vender_ajustada:.6f} {base_asset}</b> de <b>{symbol}</b> por comando...")
-    logging.info(f"Comando de venta manual recibido para {symbol}. Cantidad a vender: {cantidad_a_vender_ajustada}")
-
-    orden = vender(client, symbol, cantidad_a_vender_ajustada, posiciones_abiertas, total_beneficio_acumulado, bot_params, transacciones_diarias, telegram_token, telegram_chat_id, open_positions_file, config_manager_ref,"venta por comando")
-
-    if orden:
-        logging.info(f"Venta de {symbol} ejecutada con éxito por comando.")
-        telegram_handler.send_telegram_message(f"Venta de {symbol} ejecutada con éxito por comando.")
-    else:
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Fallo al ejecutar la venta de <b>{symbol}</b> por comando. Revisa los logs.")
-        logging.error(f"Fallo al ejecutar la venta de {symbol} por comando.")
+    telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"⚙️ Intentando vender <b>{symbol}</b> por comando...")
+    
+    # Reutilizar la función vender principal
+    orden = vender(
+        client, symbol, cantidad_a_vender_ajustada, posiciones_abiertas,
+        total_beneficio_acumulado, bot_params, transacciones_diarias,
+        telegram_bot_token, telegram_chat_id, open_positions_file, config_manager,
+        motivo_venta="Comando Manual"
+    )
+    return orden
 
