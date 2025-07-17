@@ -2,6 +2,7 @@ import logging
 import time
 import json
 from binance.enums import *
+from datetime import datetime # Importar datetime para los timestamps
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -105,7 +106,7 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
 
     # Asegurarse de que la cantidad ajustada no exceda el saldo disponible
     max_cantidad_posible = saldo_usdt / precio_actual
-    cantidad_final = min(cantidad_ajustada, max_cantidad_posible)
+    cantidad_final = min(cantidad_ajustada, max_cantidad_possible)
     
     # Asegurar que la cantidad final sea un múltiplo del step_size
     cantidad_final = binance_utils.ajustar_cantidad(cantidad_final, step_size)
@@ -178,8 +179,10 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
     Ejecuta una orden de venta a precio de mercado en Binance.
     Actualiza el beneficio total, elimina la posición y envía una notificación a Telegram.
     """
+    base_asset = symbol.replace("USDT", "")
+    
     try:
-        # NUEVO: Obtener información del símbolo para verificar la cantidad mínima de la orden
+        # Obtener información del símbolo para verificar la cantidad mínima de la orden
         info = client.get_symbol_info(symbol)
         min_notional = 0.0 # Valor mínimo de la orden en USDT
         min_qty = 0.0 # Cantidad mínima de la moneda base
@@ -191,16 +194,22 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
                 min_qty = float(f['minQty'])
         
         # Obtener el saldo real actual para este activo
-        saldo_real_activo = binance_utils.obtener_saldo_moneda(client, symbol.replace("USDT", ""))
+        saldo_real_activo = binance_utils.obtener_saldo_moneda(client, base_asset)
         
         # Ajustar la cantidad a vender al step_size
         cantidad_a_vender_ajustada = binance_utils.ajustar_cantidad(saldo_real_activo, binance_utils.get_step_size(client, symbol))
 
         # Verificar si la cantidad ajustada es suficiente para una orden
-        if cantidad_a_vender_ajustada <= 0:
+        if cantidad_a_vender_ajustada <= 0 or cantidad_a_vender_ajustada < min_qty:
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
-                                                   f"⚠️ No hay <b>{symbol.replace('USDT', '')}</b> disponible para vender o la cantidad es demasiado pequeña para una orden.")
-            logging.warning(f"⚠️ No hay {symbol.replace('USDT', '')} disponible para vender o la cantidad es demasiado pequeña para una orden.")
+                                                   f"⚠️ No hay <b>{base_asset}</b> disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
+            logging.warning(f"⚠️ No hay {base_asset} disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
+            
+            # Si la posición está en el registro del bot pero no hay saldo real, eliminarla
+            if symbol in posiciones_abiertas:
+                del posiciones_abiertas[symbol]
+                position_manager.save_open_positions_debounced(posiciones_abiertas)
+                logging.info(f"Posición de {symbol} eliminada del registro interno debido a saldo insuficiente.")
             return None
         
         # Verificar si el valor nocional es suficiente
@@ -211,6 +220,12 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
                                                    f"⚠️ El valor de venta de <b>{symbol}</b> ({valor_nocional:.2f} USDT) es inferior al mínimo nocional requerido ({min_notional:.2f} USDT). No se puede vender.")
             logging.warning(f"⚠️ El valor de venta de {symbol} ({valor_nocional:.2f} USDT) es inferior al mínimo nocional requerido ({min_notional:.2f} USDT).")
+            
+            # Si la posición está en el registro del bot pero su valor es muy bajo, eliminarla
+            if symbol in posiciones_abiertas:
+                del posiciones_abiertas[symbol]
+                position_manager.save_open_positions_debounced(posiciones_abiertas)
+                logging.info(f"Posición de {symbol} eliminada del registro interno debido a valor nocional insuficiente.")
             return None
             
         # Ejecutar orden de venta a mercado
@@ -267,34 +282,46 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
     Permite vender una posición manualmente a través de un comando de Telegram.
     """
     if symbol not in posiciones_abiertas:
-        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay una posición abierta para <b>{symbol}</b>.")
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay una posición abierta para <b>{symbol}</b> en el registro del bot.")
         return
 
     base_asset = symbol.replace("USDT", "")
     saldo_real_activo = binance_utils.obtener_saldo_moneda(client, base_asset)
     
     if saldo_real_activo <= 0:
-        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay saldo de <b>{base_asset}</b> en tu cuenta para vender.")
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay saldo de <b>{base_asset}</b> en tu cuenta de Binance para vender.")
+        # Eliminar la posición del registro del bot si el saldo real es cero
+        if symbol in posiciones_abiertas:
+            del posiciones_abiertas[symbol]
+            position_manager.save_open_positions_debounced(posiciones_abiertas)
+            logging.info(f"Posición de {symbol} eliminada del registro interno debido a saldo real cero.")
         return
 
     # Ajustar la cantidad a vender al step_size
     cantidad_a_vender_ajustada = binance_utils.ajustar_cantidad(saldo_real_activo, binance_utils.get_step_size(client, symbol))
 
-    # NUEVO: Verificar si la cantidad ajustada es suficiente para una orden
+    # Verificar si la cantidad ajustada es suficiente para una orden
     info = client.get_symbol_info(symbol)
     min_notional = 0.0
+    min_qty = 0.0
     for f in info['filters']:
         if f['filterType'] == 'MIN_NOTIONAL':
             min_notional = float(f['minNotional'])
-            break
+        elif f['filterType'] == 'LOT_SIZE':
+            min_qty = float(f['minQty'])
     
     precio_actual = binance_utils.obtener_precio_actual(client, symbol)
     valor_nocional = cantidad_a_vender_ajustada * precio_actual
 
-    if cantidad_a_vender_ajustada <= 0 or valor_nocional < min_notional:
+    if cantidad_a_vender_ajustada <= 0 or cantidad_a_vender_ajustada < min_qty or valor_nocional < min_notional:
         telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
-                                               f"⚠️ La cantidad de <b>{base_asset}</b> disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta. Mínimo nocional: {min_notional:.2f} USDT.")
+                                               f"⚠️ La cantidad de <b>{base_asset}</b> disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta. Mínimo nocional: {min_notional:.2f} USDT, Mínimo cantidad: {min_qty:.8f}.")
         logging.warning(f"⚠️ La cantidad de {base_asset} disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta.")
+        # Eliminar la posición del registro del bot si la cantidad es muy pequeña para vender
+        if symbol in posiciones_abiertas:
+            del posiciones_abiertas[symbol]
+            position_manager.save_open_positions_debounced(posiciones_abiertas)
+            logging.info(f"Posición de {symbol} eliminada del registro interno debido a cantidad/valor nocional insuficiente.")
         return
 
     telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"⚙️ Intentando vender <b>{symbol}</b> por comando...")
@@ -307,4 +334,3 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
         motivo_venta="Comando Manual"
     )
     return orden
-
