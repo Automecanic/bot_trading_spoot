@@ -1,75 +1,113 @@
-import os # Módulo para interactuar con el sistema operativo, usado para verificar la existencia de archivos.
-import json # Módulo para trabajar con archivos JSON, usado para guardar y cargar el estado de las posiciones.
-import logging # Módulo para registrar eventos, errores y mensajes informativos.
-import time # Módulo para funciones relacionadas con el tiempo, usado para el debounce.
+import json
+import logging
+import os
+import time
+import firestore_utils # Importa el nuevo módulo para Firestore
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Nombre del archivo donde se guardan las posiciones abiertas.
+# Nombre del archivo de posiciones local (se mantendrá como fallback o para la primera inicialización)
 OPEN_POSITIONS_FILE = "open_positions.json"
+# ID del documento en Firestore donde se guardarán las posiciones abiertas
+FIRESTORE_POSITIONS_DOC_ID = "open_positions_data"
+# Nombre de la colección en Firestore para los datos públicos (posiciones del bot)
+# Siguiendo las reglas de seguridad: /artifacts/{appId}/public/data/bot_positions
+FIRESTORE_POSITIONS_COLLECTION_PATH = f"artifacts/{os.getenv('__app_id', 'default-app-id')}/public/data/bot_positions"
 
-# Variables para la gestión del debounce al guardar posiciones.
-last_save_time_positions = 0
-SAVE_POSITIONS_DEBOUNCE_INTERVAL = 60 # Intervalo mínimo (en segundos) entre escrituras del archivo de posiciones.
+# Variable para implementar el debounce en el guardado de posiciones
+last_save_time = 0
+SAVE_DEBOUNCE_INTERVAL = 5 # Guarda como máximo cada 5 segundos
 
 def load_open_positions(stop_loss_porcentaje):
     """
-    Carga las posiciones abiertas desde el archivo OPEN_POSITIONS_FILE.
-    Si el archivo no existe o hay un error de formato JSON, el bot inicia sin posiciones.
-    Asegura que los valores numéricos se carguen como flotantes.
-    También inicializa nuevas claves para compatibilidad con versiones anteriores del archivo.
-    Requiere el stop_loss_porcentaje para inicializar 'stop_loss_fijo_nivel_actual' si es necesario.
+    Carga las posiciones abiertas del bot. Intenta cargar desde Firestore primero.
+    Si falla o no encuentra el documento, carga desde el archivo local (open_positions.json).
+    Si el archivo local tampoco existe, devuelve un diccionario vacío.
+    Inicializa 'sl_moved_to_breakeven' si no existe.
     """
+    db = firestore_utils.get_firestore_db()
+    if db:
+        try:
+            doc_ref = db.collection(FIRESTORE_POSITIONS_COLLECTION_PATH).document(FIRESTORE_POSITIONS_DOC_ID)
+            doc = doc_ref.get()
+            if doc.exists:
+                positions = doc.to_dict()
+                logging.info(f"✅ Posiciones cargadas desde Firestore: {FIRESTORE_POSITIONS_COLLECTION_PATH}/{FIRESTORE_POSITIONS_DOC_ID}")
+                
+                # Asegurar la inicialización de 'sl_moved_to_breakeven' y 'stop_loss_fijo_nivel_actual'
+                for symbol, data in positions.items():
+                    if 'sl_moved_to_breakeven' not in data:
+                        data['sl_moved_to_breakeven'] = False
+                    if 'stop_loss_fijo_nivel_actual' not in data:
+                        data['stop_loss_fijo_nivel_actual'] = data['precio_compra'] * (1 - stop_loss_porcentaje)
+                return positions
+            else:
+                logging.warning(f"⚠️ Documento de posiciones no encontrado en Firestore: {FIRESTORE_POSITIONS_COLLECTION_PATH}/{FIRESTORE_POSITIONS_DOC_ID}. Intentando cargar desde archivo local.")
+        except Exception as e:
+            logging.error(f"❌ Error al cargar posiciones desde Firestore: {e}", exc_info=True)
+            logging.warning("⚠️ Fallback: Intentando cargar desde archivo local.")
+
+    # Fallback a archivo local
     if os.path.exists(OPEN_POSITIONS_FILE):
         try:
             with open(OPEN_POSITIONS_FILE, 'r') as f:
-                data = json.load(f)
-                for symbol, pos in data.items():
-                    pos['precio_compra'] = float(pos['precio_compra'])
-                    pos['cantidad_base'] = float(pos['cantidad_base'])
-                    pos['max_precio_alcanzado'] = float(pos['max_precio_alcanzado'])
-                    # Inicializar 'sl_moved_to_breakeven' si no existe en el archivo cargado (para compatibilidad).
-                    if 'sl_moved_to_breakeven' not in pos:
-                        pos['sl_moved_to_breakeven'] = False
-                    # Inicializar 'stop_loss_fijo_nivel_actual' si no existe.
-                    if 'stop_loss_fijo_nivel_actual' not in pos:
-                        # Usar el SL fijo inicial como valor por defecto si no se ha movido.
-                        pos['stop_loss_fijo_nivel_actual'] = pos['precio_compra'] * (1 - stop_loss_porcentaje)
-                logging.info(f"✅ Posiciones abiertas cargadas desde {OPEN_POSITIONS_FILE}.")
-                return data
+                positions = json.load(f)
+            logging.info(f"✅ Posiciones cargadas desde {OPEN_POSITIONS_FILE}.")
+            # Asegurar la inicialización de 'sl_moved_to_breakeven' y 'stop_loss_fijo_nivel_actual'
+            for symbol, data in positions.items():
+                if 'sl_moved_to_breakeven' not in data:
+                    data['sl_moved_to_breakeven'] = False
+                if 'stop_loss_fijo_nivel_actual' not in data:
+                    data['stop_loss_fijo_nivel_actual'] = data['precio_compra'] * (1 - stop_loss_porcentaje)
+            return positions
         except json.JSONDecodeError as e:
-            logging.error(f"❌ Error al leer JSON del archivo {OPEN_POSITIONS_FILE}: {e}. Iniciando sin posiciones.")
-            return {}
+            logging.error(f"❌ Error al decodificar JSON de {OPEN_POSITIONS_FILE}: {e}")
         except Exception as e:
-            logging.error(f"❌ Error inesperado al cargar posiciones desde {OPEN_POSITIONS_FILE}: {e}. Iniciando sin posiciones.")
-            return {}
-    logging.info(f"Archivo de posiciones abiertas '{OPEN_POSITIONS_FILE}' no encontrado. Iniciando sin posiciones.")
+            logging.error(f"❌ Error al cargar posiciones desde {OPEN_POSITIONS_FILE}: {e}")
+    
+    logging.warning("⚠️ No se encontró archivo de posiciones local o hubo un error. Devolviendo posiciones vacías.")
     return {}
 
-def save_open_positions_debounced(posiciones_dict):
+def save_open_positions(positions):
     """
-    Guarda las posiciones abiertas en el archivo OPEN_POSITIONS_FILE, aplicando un mecanismo de "debounce".
-    Esto significa que la escritura real en el disco solo se realizará si ha pasado un tiempo mínimo
-    (definido por SAVE_POSITIONS_DEBOUNCE_INTERVAL) desde la última escritura.
-    Este enfoque reduce las operaciones de I/O de disco, lo que mejora el rendimiento del bot,
-    especialmente en entornos de despliegue como Railway donde las operaciones de disco pueden ser más lentas.
-    Las operaciones críticas (compra/venta) siguen guardando inmediatamente.
+    Guarda las posiciones abiertas del bot. Intenta guardar en Firestore primero.
+    Si falla, guarda en el archivo local (open_positions.json).
     """
-    global last_save_time_positions # Accede a la variable global que rastrea la última vez que se guardó.
-    current_time = time.time() # Obtiene el tiempo actual en segundos desde la época.
-
-    # Comprueba si ha pasado suficiente tiempo desde el último guardado debounced.
-    if (current_time - last_save_time_positions) >= SAVE_POSITIONS_DEBOUNCE_INTERVAL:
+    db = firestore_utils.get_firestore_db()
+    if db:
         try:
-            with open(OPEN_POSITIONS_FILE, 'w') as f:
-                json.dump(posiciones_dict, f, indent=4) # Sobrescribe el archivo con el estado actual del diccionario.
-            logging.info(f"✅ Posiciones abiertas guardadas en {OPEN_POSITIONS_FILE} (debounced).")
-            last_save_time_positions = current_time # Actualiza la marca de tiempo del último guardado exitoso.
-        except IOError as e:
-            # Manejo de error si hay un problema al escribir el archivo.
-            logging.error(f"❌ Error al escribir en el archivo {OPEN_POSITIONS_FILE}: {e}")
+            doc_ref = db.collection(FIRESTORE_POSITIONS_COLLECTION_PATH).document(FIRESTORE_POSITIONS_DOC_ID)
+            doc_ref.set(positions)
+            logging.info(f"✅ Posiciones abiertas guardadas en Firestore: {FIRESTORE_POSITIONS_COLLECTION_PATH}/{FIRESTORE_POSITIONS_DOC_ID}")
+            return True
+        except Exception as e:
+            logging.error(f"❌ Error al guardar posiciones en Firestore: {e}", exc_info=True)
+            logging.warning("⚠️ Fallback: Intentando guardar en archivo local.")
+
+    # Fallback a archivo local
+    try:
+        with open(OPEN_POSITIONS_FILE, 'w') as f:
+            json.dump(positions, f, indent=4)
+        logging.info(f"✅ Posiciones abiertas guardadas en {OPEN_POSITIONS_FILE}.")
+        return True
+    except IOError as e:
+        logging.error(f"❌ Error al escribir en el archivo {OPEN_POSITIONS_FILE}: {e}")
+        return False
+    except Exception as e:
+        logging.error(f"❌ Error inesperado al guardar posiciones en {OPEN_POSITIONS_FILE}: {e}")
+        return False
+
+def save_open_positions_debounced(positions):
+    """
+    Guarda las posiciones abiertas, pero con un "debounce" para evitar escrituras excesivas.
+    Solo guarda si ha pasado un cierto tiempo desde la última escritura.
+    """
+    global last_save_time
+    current_time = time.time()
+    if (current_time - last_save_time) >= SAVE_DEBOUNCE_INTERVAL:
+        save_open_positions(positions)
+        last_save_time = current_time
     else:
-        # Si no ha pasado suficiente tiempo, se registra que el guardado fue pospuesto (para depuración).
-        logging.debug(f"⏳ Guardado de posiciones pospuesto. Último guardado hace {current_time - last_save_time_positions:.2f}s.")
+        logging.debug(f"⏳ Guardado de posiciones pospuesto (debounce). Próximo guardado en {SAVE_DEBOUNCE_INTERVAL - (current_time - last_save_time):.2f}s")
 
