@@ -3,8 +3,8 @@ import time
 import json
 from binance.enums import *
 from datetime import datetime # Importar datetime para los timestamps
-import firestore_utils # NUEVO: Importa el módulo para Firestore
-import os # NUEVO: Importa el módulo os para os.getenv
+import firestore_utils # Importa el módulo para Firestore
+import os # Importa el módulo os para os.getenv
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -166,7 +166,7 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
             }
             transacciones_diarias.append(transaccion) # Todavía se añade para el informe diario
             
-            # NUEVO: Guardar la transacción en Firestore
+            # Guardar la transacción en Firestore
             db = firestore_utils.get_firestore_db()
             if db:
                 try:
@@ -220,8 +220,8 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
         # Verificar si la cantidad ajustada es suficiente para una orden
         if cantidad_a_vender_ajustada <= 0 or cantidad_a_vender_ajustada < min_qty:
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
-                                                   f"⚠️ No hay <b>{base_asset}</b> disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
-            logging.warning(f"⚠️ No hay {base_asset} disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
+                                                   f"⚠️ No hay <b>{symbol}</b> disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
+            logging.warning(f"⚠️ No hay {symbol} disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
             
             # Si la posición está en el registro del bot pero no hay saldo real, eliminarla
             if symbol in posiciones_abiertas:
@@ -263,6 +263,7 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
 
             # Actualizar bot_params con el nuevo beneficio total
             bot_params['TOTAL_BENEFICIO_ACUMULADO'] = total_beneficio_acumulado
+            logging.info(f"DEBUG: TOTAL_BENEFICIO_ACUMULADO antes de guardar en config_manager: {bot_params['TOTAL_BENEFICIO_ACUMULADO']:.2f} USDT") # NUEVO LOG
             config_manager.save_parameters(bot_params) # Guardar los parámetros actualizados
 
             position_manager.save_open_positions_debounced(posiciones_abiertas) # Guardar posiciones actualizadas
@@ -280,7 +281,7 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
             }
             transacciones_diarias.append(transaccion) # Todavía se añade para el informe diario
 
-            # NUEVO: Guardar la transacción en Firestore
+            # Guardar la transacción en Firestore
             db = firestore_utils.get_firestore_db()
             if db:
                 try:
@@ -318,7 +319,7 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
     saldo_real_activo = binance_utils.obtener_saldo_moneda(client, base_asset)
     
     if saldo_real_activo <= 0:
-        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay saldo de <b>{base_asset}</b> en tu cuenta de Binance para vender.")
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, f"❌ No hay saldo de <b>{symbol}</b> en tu cuenta de Binance para vender.")
         # Eliminar la posición del registro del bot si el saldo real es cero
         if symbol in posiciones_abiertas:
             del posiciones_abiertas[symbol]
@@ -344,8 +345,8 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
 
     if cantidad_a_vender_ajustada <= 0 or cantidad_a_vender_ajustada < min_qty or valor_nocional < min_notional:
         telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
-                                               f"⚠️ La cantidad de <b>{base_asset}</b> disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta. Mínimo nocional: {min_notional:.2f} USDT, Mínimo cantidad: {min_qty:.8f}.")
-        logging.warning(f"⚠️ La cantidad de {base_asset} disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta.")
+                                               f"⚠️ La cantidad de <b>{symbol}</b> disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta. Mínimo nocional: {min_notional:.2f} USDT, Mínimo cantidad: {min_qty:.8f}.")
+        logging.warning(f"⚠️ La cantidad de {symbol} disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta.")
         # Eliminar la posición del registro del bot si la cantidad es muy pequeña para vender
         if symbol in posiciones_abiertas:
             del posiciones_abiertas[symbol]
