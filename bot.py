@@ -53,7 +53,7 @@ bot_params = config_manager.load_parameters() # Carga la configuración del bot 
 
 # Asignar los valores del diccionario cargado a las variables globales del bot.
 # Estos parámetros controlan la estrategia de trading y el comportamiento del bot.
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"] # Lista de pares de trading a monitorear.
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT"] # Lista de pares de trading a monitorear.
 INTERVALO = bot_params["INTERVALO"] # Intervalo de tiempo en segundos entre cada ciclo de trading principal.
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"] # Porcentaje del capital total a arriesgar por operación.
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"] # Porcentaje de ganancia para cerrar una posición (Take Profit).

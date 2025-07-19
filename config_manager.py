@@ -95,3 +95,4 @@ def save_parameters(params):
     except Exception as e:
         logging.error(f"❌ Error inesperado al guardar parámetros en {CONFIG_FILE}: {e}")
         return False
+
