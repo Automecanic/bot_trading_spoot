@@ -30,17 +30,12 @@ API_SECRET = os.getenv("BINANCE_API_SECRET") # Clave secreta para autenticación
 # Log para depurar la carga de la API Key
 if API_KEY:
     logging.info(f"API_KEY cargada (primeros 5 caracteres): {API_KEY[:5]}*****")
-    print(f"API_KEY cargada (primeros 5 caracteres): {API_KEY[:5]}*****")
 else:
     logging.warning("API_KEY no cargada desde las variables de entorno.")
-    print("API_KEY no cargada desde las variables de entorno.")
 if API_SECRET:
     logging.info(f"API_SECRET cargada (primeros 5 caracteres): {API_SECRET[:5]}*****")
-    print(f"API_SECRET cargada (primeros 5 caracteres): {API_SECRET[:5]}*****")
 else:
     logging.warning("API_SECRET no cargada desde las variables de entorno.")
-    print("API_SECRET no cargada desde las variables de entorno.")
-
 
 
 # Token de tu bot de Telegram y Chat ID para enviar mensajes.
@@ -58,8 +53,7 @@ bot_params = config_manager.load_parameters() # Carga la configuración del bot 
 
 # Asignar los valores del diccionario cargado a las variables globales del bot.
 # Estos parámetros controlan la estrategia de trading y el comportamiento del bot.
-# Lista de pares de trading a monitorear (se filtrará más abajo).
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"] # Lista de pares de trading a monitorear.
 INTERVALO = bot_params["INTERVALO"] # Intervalo de tiempo en segundos entre cada ciclo de trading principal.
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"] # Porcentaje del capital total a arriesgar por operación.
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"] # Porcentaje de ganancia para cerrar una posición (Take Profit).
@@ -127,7 +121,8 @@ def handle_telegram_commands():
     # Declara las variables globales que esta función puede modificar.
     global last_update_id, RIESGO_POR_OPERACION_PORCENTAJE, TAKE_PROFIT_PORCENTAJE, \
            STOP_LOSS_PORCENTAJE, TRAILING_STOP_PORCENTAJE, EMA_PERIODO, RSI_PERIODO, \
-           RSI_UMBRAL_SOBRECOMPRA, INTERVALO, bot_params, TOTAL_BENEFICIO_ACUMULADO
+           RSI_UMBRAL_SOBRECOMPRA, INTERVALO, bot_params, TOTAL_BENEFICIO_ACUMULADO, \
+           posiciones_abiertas, transacciones_diarias
 
     updates = telegram_handler.get_telegram_updates(TELEGRAM_BOT_TOKEN, last_update_id + 1)
 
@@ -263,7 +258,8 @@ def handle_telegram_commands():
                     elif command == "/csv": # Genera y envía un informe CSV de transacciones.
                         telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "Generando informe CSV. Esto puede tardar un momento...")
                         with shared_data_lock: # Accede a transacciones_diarias con el bloqueo
-                            reporting_manager.generar_y_enviar_csv_ahora(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, transacciones_diarias)
+                            # Ahora, generar_y_enviar_csv_ahora leerá de Firestore
+                            reporting_manager.generar_y_enviar_csv_ahora(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) # No necesita transacciones_diarias
                     elif command == "/help": # Muestra el mensaje de ayuda con todos los comandos.
                         telegram_handler.send_help_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
                         telegram_handler.send_keyboard_menu(TELEGRAM_BOT_TOKEN, chat_id, "Aquí tienes los comandos disponibles. También puedes usar el teclado de abajo:")
@@ -274,12 +270,11 @@ def handle_telegram_commands():
                             if symbol_to_sell in SYMBOLS: 
                                 with shared_data_lock: # Protege el acceso a posiciones_abiertas y variables de beneficio
                                     trading_logic.vender_por_comando(
-                                        client, symbol_to_sell, posiciones_abiertas, transacciones_diarias,
+                                        client, symbol_to_sell, posiciones_abiertas, transacciones_diarias, # transacciones_diarias ya no es tan relevante aquí
                                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE,
                                         TOTAL_BENEFICIO_ACUMULADO, bot_params, config_manager
                                     )
-                                    # Actualizar TOTAL_BENEFICIO_ACUMULADO después de la venta dentro del bloqueo
-                                    # Esto es importante porque vender_por_comando actualiza bot_params['TOTAL_BENEFICIO_ACUMULADO']
+                                    # Actualizar TOTAL_BENEFICIO_ACUMULADO después de la venta, ya que trading_logic lo modifica en bot_params.
                                     TOTAL_BENEFICIO_ACUMULADO = bot_params['TOTAL_BENEFICIO_ACUMULADO']
                             else:
                                 telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Símbolo <b>{symbol_to_sell}</b> no reconocido o no monitoreado por el bot.")
@@ -353,15 +348,48 @@ try:
             if ultima_fecha_informe_enviado is not None: # Si ya se había enviado un informe antes (no es la primera ejecución).
                 telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"Preparando informe del día {ultima_fecha_informe_enviado}...")
                 with shared_data_lock: # Protege el acceso a transacciones_diarias
-                    reporting_manager.enviar_informe_diario(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, transacciones_diarias)
+                    # Ahora, enviar_informe_diario leerá de Firestore
+                    reporting_manager.enviar_informe_diario(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) # No necesita transacciones_diarias
             
             ultima_fecha_informe_enviado = hoy # Actualiza la fecha del último informe enviado a la fecha actual.
             with shared_data_lock: # Protege la limpieza de transacciones_diarias
                 transacciones_diarias.clear() # Limpia la lista de transacciones diarias para el nuevo día.
 
+        # --- PROACTIVE POSITION CLEANUP BASED ON ACTUAL BINANCE BALANCES ---
+        # This ensures the bot's internal state reflects reality before processing.
+        symbols_to_remove = []
+        with shared_data_lock:
+            for symbol, data in list(posiciones_abiertas.items()): # Iterate over a copy to allow modification
+                base_asset = symbol.replace("USDT", "")
+                actual_balance = binance_utils.obtener_saldo_moneda(client, base_asset)
+                
+                # Get symbol info to check min_qty for the pair
+                info = client.get_symbol_info(symbol)
+                min_qty = 0.0
+                for f in info['filters']:
+                    if f['filterType'] == 'LOT_SIZE':
+                        min_qty = float(f['minQty'])
+                        break # Found LOT_SIZE filter, no need to check further
+
+                # Define a small threshold for considering a balance "too small"
+                # Using min_qty for the specific asset is more accurate.
+                threshold = max(min_qty, 0.00000001) # Use Binance's min_qty or a very small number
+
+                if actual_balance < threshold:
+                    logging.warning(f"⚠️ Saldo real de {base_asset} ({actual_balance:.8f}) para {symbol} es demasiado bajo (umbral: {threshold:.8f}). Marcando posición para eliminación.")
+                    symbols_to_remove.append(symbol)
+            
+            for symbol in symbols_to_remove:
+                del posiciones_abiertas[symbol]
+                position_manager.save_open_positions_debounced(posiciones_abiertas)
+                telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, 
+                                                       f"🗑️ Posición de <b>{symbol}</b> eliminada del registro del bot debido a saldo insuficiente en Binance.")
+                logging.info(f"Posición de {symbol} eliminada del registro interno debido a saldo real insuficiente.")
+        # --- END PROACTIVE CLEANUP ---
+
         # --- LÓGICA PRINCIPAL DE TRADING ---
         # Ejecuta la lógica de trading solo si ha pasado el INTERVALO de tiempo configurado.
-        if (time.time() - last_trading_check_time) >= INTERVALO:
+        if (time.time() - last_trading_check_time) >= INTERVALO: # This check is redundant after the proactive cleanup
             logging.info(f"Iniciando ciclo de trading principal (cada {INTERVALO}s)...")
             general_message = "" # Variable para acumular mensajes de resumen del ciclo.
 
@@ -553,3 +581,4 @@ except Exception as e: # Captura cualquier excepción general en el bucle princi
     # En caso de un error inesperado, también se intenta detener el hilo de Telegram.
     telegram_stop_event.set()
     telegram_thread.join()
+
