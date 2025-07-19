@@ -3,6 +3,7 @@ import time
 import json
 from binance.enums import *
 from datetime import datetime # Importar datetime para los timestamps
+import firestore_utils # NUEVO: Importa el módulo para Firestore
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,6 +14,11 @@ import binance_utils
 import position_manager
 import telegram_handler
 import config_manager # Para guardar bot_params actualizado
+
+# Nombre de la colección en Firestore para el historial de transacciones
+# Siguiendo las reglas de seguridad: /artifacts/{appId}/public/data/transactions_history
+FIRESTORE_TRANSACTIONS_COLLECTION_PATH = f"artifacts/{os.getenv('__app_id', 'default-app-id')}/public/data/transactions_history"
+
 
 def calcular_ema_rsi(client, symbol, ema_periodo, rsi_periodo):
     """
@@ -106,7 +112,7 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
 
     # Asegurarse de que la cantidad ajustada no exceda el saldo disponible
     max_cantidad_posible = saldo_usdt / precio_actual
-    cantidad_final = min(cantidad_ajustada, max_cantidad_posible) # Corregido: max_cantidad_possible a max_cantidad_posible
+    cantidad_final = min(cantidad_ajustada, max_cantidad_posible)
     
     # Asegurar que la cantidad final sea un múltiplo del step_size
     cantidad_final = binance_utils.ajustar_cantidad(cantidad_final, step_size)
@@ -157,7 +163,18 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
                 'cantidad': cantidad_comprada_real,
                 'valor_usdt': precio_ejecucion * cantidad_comprada_real
             }
-            transacciones_diarias.append(transaccion)
+            transacciones_diarias.append(transaccion) # Todavía se añade para el informe diario
+            
+            # NUEVO: Guardar la transacción en Firestore
+            db = firestore_utils.get_firestore_db()
+            if db:
+                try:
+                    # Firestore generará un ID de documento automático para cada transacción
+                    db.collection(FIRESTORE_TRANSACTIONS_COLLECTION_PATH).add(transaccion)
+                    logging.info(f"✅ Transacción de COMPRA guardada en Firestore para {symbol}.")
+                except Exception as e:
+                    logging.error(f"❌ Error al guardar transacción de COMPRA en Firestore para {symbol}: {e}", exc_info=True)
+
 
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
                                                    f"🟢 COMPRA de <b>{symbol}</b> ejecutada a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad: {cantidad_comprada_real:.6f}")
@@ -260,7 +277,18 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
                 'ganancia_usdt': ganancia_usdt,
                 'motivo_venta': motivo_venta
             }
-            transacciones_diarias.append(transaccion)
+            transacciones_diarias.append(transaccion) # Todavía se añade para el informe diario
+
+            # NUEVO: Guardar la transacción en Firestore
+            db = firestore_utils.get_firestore_db()
+            if db:
+                try:
+                    # Firestore generará un ID de documento automático para cada transacción
+                    db.collection(FIRESTORE_TRANSACTIONS_COLLECTION_PATH).add(transaccion)
+                    logging.info(f"✅ Transacción de VENTA guardada en Firestore para {symbol}.")
+                except Exception as e:
+                    logging.error(f"❌ Error al guardar transacción de VENTA en Firestore para {symbol}: {e}", exc_info=True)
+
 
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id, 
                                                    f"🔴 VENTA de <b>{symbol}</b> ejecutada por <b>{motivo_venta}</b> a <b>{precio_ejecucion:.4f}</b> USDT. Ganancia: <b>{ganancia_usdt:.2f}</b> USDT.")
