@@ -21,8 +21,32 @@ def generar_y_enviar_csv_ahora(telegram_token, telegram_chat_id, transacciones_d
     nombre_archivo_csv = f"transacciones_historico_{fecha_actual}.csv"
 
     try:
+        # NUEVO: Ajustar fieldnames para que coincidan con las claves del diccionario de transacción
+        fieldnames = [
+            'timestamp', 'symbol', 'tipo', 'precio', 'cantidad',
+            'valor_usdt', 'ganancia_usdt', 'motivo_venta'
+        ]
+        
+        # Opcional: Si quieres nombres de columnas diferentes en el CSV, puedes mapearlos.
+        # Por ejemplo, si 'timestamp' debe ser 'FechaHora' en el CSV:
+        # fieldnames_csv = ['FechaHora', 'Símbolo', 'Tipo', 'Precio', 'Cantidad', 'ValorUSDT', 'GananciaPerdidaUSDT', 'MotivoVenta']
+        # writer = csv.DictWriter(csvfile, fieldnames=fieldnames_csv)
+        # writer.writeheader()
+        # for transaccion in transacciones_diarias:
+        #     # Crear un nuevo dict con los nombres de campo deseados
+        #     row = {
+        #         'FechaHora': transaccion.get('timestamp', ''),
+        #         'Símbolo': transaccion.get('symbol', ''),
+        #         'Tipo': transaccion.get('tipo', ''),
+        #         'Precio': transaccion.get('precio', 0.0),
+        #         'Cantidad': transaccion.get('cantidad', 0.0),
+        #         'ValorUSDT': transaccion.get('valor_usdt', 0.0),
+        #         'GananciaPerdidaUSDT': transaccion.get('ganancia_usdt', 0.0),
+        #         'MotivoVenta': transaccion.get('motivo_venta', '')
+        #     }
+        #     writer.writerow(row)
+        
         with open(nombre_archivo_csv, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['FechaHora', 'Símbolo', 'Tipo', 'Precio', 'Cantidad', 'GananciaPerdidaUSDT', 'Motivo']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
             writer.writeheader()
@@ -51,8 +75,13 @@ def enviar_informe_diario(telegram_token, telegram_chat_id, transacciones_diaria
     nombre_archivo_diario_csv = f"transacciones_diarias_{fecha_diario}.csv"
     
     try:
+        # NUEVO: Ajustar fieldnames para que coincidan con las claves del diccionario de transacción
+        fieldnames = [
+            'timestamp', 'symbol', 'tipo', 'precio', 'cantidad',
+            'valor_usdt', 'ganancia_usdt', 'motivo_venta'
+        ]
+
         with open(nombre_archivo_diario_csv, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['FechaHora', 'Símbolo', 'Tipo', 'Precio', 'Cantidad', 'GananciaPerdidaUSDT', 'Motivo']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
             writer.writeheader()
@@ -82,3 +111,4 @@ def send_beneficio_message(client, total_beneficio_acumulado, telegram_token, te
         f"   - <b>{beneficio_eur:.2f} EUR</b>"
     )
     telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, message)
+
