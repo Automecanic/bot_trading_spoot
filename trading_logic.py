@@ -4,6 +4,7 @@ import json
 from binance.enums import *
 from datetime import datetime # Importar datetime para los timestamps
 import firestore_utils # NUEVO: Importa el módulo para Firestore
+import os # NUEVO: Importa el módulo os para os.getenv
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
