@@ -1,7 +1,8 @@
 import requests
 import json
 import logging
-import os # Necesario para send_positions_file_content
+import os # Necesario para os.path.exists, os.path.basename, os.remove
+import csv # NUEVO: Necesario para trabajar con archivos CSV
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,7 +32,7 @@ def send_telegram_message(token, chat_id, message):
 
 def send_telegram_document(token, chat_id, file_path, caption=""):
     """
-    Envía un documento (ej. un archivo CSV de transacciones) a un chat de Telegram específico.
+    Envía un documento (ej. un archivo CSV de transacciones o JSON de posiciones) a un chat de Telegram específico.
     """
     if not token:
         logging.warning("⚠️ TOKEN de Telegram no configurado. No se pueden enviar documentos.")
@@ -168,7 +169,7 @@ def set_telegram_commands_menu(token):
         {"command": "csv", "description": "Generar y enviar informe CSV de transacciones"},
         {"command": "beneficio", "description": "Mostrar beneficio total acumulado"},
         {"command": "vender", "description": "Vender una posición (ej. /vender BTCUSDT)"},
-        {"command": "convert_dust", "description": "Convertir saldos pequeños (dust) a BNB"}, # NUEVO: Comando para convertir dust
+        {"command": "convert_dust", "description": "Convertir saldos pequeños (dust) a BNB"},
         {"command": "get_positions_file", "description": "Obtener archivo de posiciones abiertas"},
         {"command": "help", "description": "Mostrar ayuda y comandos disponibles"}
     ]
@@ -191,25 +192,59 @@ def set_telegram_commands_menu(token):
         return False
 
 def send_positions_file_content(token, chat_id, file_path):
-    """Lee el contenido del archivo OPEN_POSITIONS_FILE y lo envía al chat de Telegram."""
+    """
+    Lee el contenido del archivo OPEN_POSITIONS_FILE (JSON), lo convierte a CSV
+    y lo envía como un documento adjunto al chat de Telegram.
+    """
     if not os.path.exists(file_path):
         send_telegram_message(token, chat_id, f"❌ Archivo de posiciones abiertas (<code>{file_path}</code>) no encontrado.")
         logging.warning(f"Intento de leer {file_path}, pero no existe.")
         return
 
+    csv_file_name = file_path.replace(".json", ".csv")
     try:
         with open(file_path, 'r') as f:
-            content = f.read()
+            positions_data = json.load(f)
+
+        if not positions_data:
+            send_telegram_message(token, chat_id, "🚫 No hay posiciones abiertas registradas para generar el CSV.")
+            return
+
+        # Preparar los datos para el CSV
+        # Cada clave del diccionario principal (ej. "BTCUSDT") se convierte en una fila.
+        # Las claves internas de cada posición se convierten en columnas.
         
-        message = (
-            f"📄 Contenido de <code>{file_path}</code>:\n\n"
-            f"<code>{content}</code>"
-        )
-        send_telegram_message(token, chat_id, message)
-        logging.info(f"Contenido de {file_path} enviado a Telegram.")
+        # Definir los nombres de los campos (columnas) para el CSV
+        # Aseguramos que 'Symbol' sea la primera columna
+        fieldnames = ['Symbol'] + list(next(iter(positions_data.values())).keys())
+        
+        # Crear una lista de diccionarios, donde cada diccionario es una fila del CSV
+        csv_rows = []
+        for symbol, data in positions_data.items():
+            row = {'Symbol': symbol}
+            row.update(data) # Añade todos los campos de la posición a la fila
+            csv_rows.append(row)
+
+        with open(csv_file_name, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(csv_rows)
+
+        caption = f"📄 Posiciones abiertas en formato CSV: <code>{os.path.basename(csv_file_name)}</code>"
+        send_telegram_document(token, chat_id, csv_file_name, caption)
+        logging.info(f"Archivo {csv_file_name} enviado como documento a Telegram.")
+
+    except json.JSONDecodeError as e:
+        send_telegram_message(token, chat_id, f"❌ Error al leer el archivo JSON de posiciones (formato inválido): {e}")
+        logging.error(f"❌ Error al decodificar JSON de {file_path}: {e}", exc_info=True)
     except Exception as e:
-        send_telegram_message(token, chat_id, f"❌ Error al leer o enviar el contenido de <code>{file_path}</code>: {e}")
-        logging.error(f"❌ Error al leer o enviar {file_path}: {e}", exc_info=True)
+        send_telegram_message(token, chat_id, f"❌ Error al convertir o enviar el archivo de posiciones como CSV: {e}")
+        logging.error(f"❌ Error al procesar {file_path} y enviar como CSV: {e}", exc_info=True)
+    finally:
+        # Limpiar el archivo CSV temporal después de enviarlo
+        if os.path.exists(csv_file_name):
+            os.remove(csv_file_name)
+            logging.info(f"Archivo CSV temporal {csv_file_name} eliminado.")
 
 def send_help_message(token, chat_id):
     """Envía un mensaje de ayuda detallado con la lista de todos los comandos disponibles."""
@@ -231,8 +266,8 @@ def send_help_message(token, chat_id):
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n"
         "<b>Utilidades:</b>\n"
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
-        " - <code>/convert_dust</code>: Convierte saldos pequeños (dust) a BNB.\n" # NUEVO: Descripción del comando dust
-        " - <code>/get_positions_file</code>: Muestra el contenido del archivo de posiciones abiertas (para depuración).\n"
+        " - <code>/convert_dust</code>: Convierte saldos pequeños (dust) a BNB.\n"
+        " - <code>/get_positions_file</code>: Obtener archivo de posiciones abiertas.\n"
         " - <code>/menu</code>: Muestra el teclado de comandos principal.\n"
         " - <code>/hide_menu</code>: Oculta el teclado de comandos.\n\n"
         "<b>Ayuda:</b>\n"
@@ -240,3 +275,4 @@ def send_help_message(token, chat_id):
         "<i>Recuerda usar valores decimales para porcentajes y enteros para períodos/umbrales.</i>"
     )
     send_telegram_message(token, chat_id, help_message)
+
