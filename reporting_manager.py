@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 import telegram_handler
 import binance_utils # Necesario para obtener_precio_eur y obtener_saldos_formateados
-import firestore_utils # NUEVO: Importa el módulo para Firestore
+import firestore_utils # Importa el nuevo módulo para Firestore
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -75,6 +75,7 @@ def enviar_informe_diario(telegram_token, telegram_chat_id):
     """
     Genera un archivo CSV con las transacciones registradas para el día actual desde Firestore y lo envía por Telegram.
     Requiere el token y chat_id de Telegram.
+    Incluye el beneficio total diario como una fila de resumen.
     """
     db = firestore_utils.get_firestore_db()
     if not db:
@@ -86,17 +87,18 @@ def enviar_informe_diario(telegram_token, telegram_chat_id):
     nombre_archivo_diario_csv = f"transacciones_diarias_{fecha_diario}.csv"
     
     transacciones_del_dia = []
+    total_beneficio_diario = 0.0 # Variable para acumular el beneficio diario
+
     try:
         # Filtrar transacciones por el día actual
-        # Firestore no soporta directamente filtros de fecha/hora complejos sin índices.
-        # Una forma simple es obtener todas y filtrar en Python, o usar un campo de fecha específico.
-        # Asumimos que 'timestamp' está en formato ISO (YYYY-MM-DDTHH:MM:SS.ffffff)
         docs = db.collection(FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
         for doc in docs:
             transaccion = doc.to_dict()
             if transaccion.get('timestamp', '').startswith(fecha_diario):
                 transacciones_del_dia.append(transaccion)
-        logging.info(f"✅ {len(transacciones_del_dia)} transacciones cargadas desde Firestore para el informe diario de {fecha_diario}.")
+                # Sumar la ganancia/pérdida de la transacción al beneficio diario
+                total_beneficio_diario += transaccion.get('ganancia_usdt', 0.0)
+        logging.info(f"✅ {len(transacciones_del_dia)} transacciones cargadas desde Firestore para el informe diario de {fecha_diario}. Beneficio diario: {total_beneficio_diario:.2f} USDT.")
 
     except Exception as e:
         telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Error al cargar transacciones diarias desde Firestore: {e}")
@@ -123,6 +125,15 @@ def enviar_informe_diario(telegram_token, telegram_chat_id):
 
             writer.writeheader()
             writer.writerows(transacciones_del_dia)
+            
+            # NUEVO: Añadir una fila de resumen con el beneficio total diario
+            # Aseguramos que la fila de resumen tenga todos los fieldnames, rellenando con vacío si no aplica
+            summary_row = {field: '' for field in fieldnames}
+            summary_row['timestamp'] = 'RESUMEN_DIARIO'
+            summary_row['ganancia_usdt'] = total_beneficio_diario
+            summary_row['motivo_venta'] = 'Beneficio Total Diario'
+            writer.writerow(summary_row) # Escribir la fila de resumen
+
         telegram_handler.send_telegram_document(telegram_token, telegram_chat_id, nombre_archivo_diario_csv, f"📊 Informe diario de transacciones para {fecha_diario}")
     except Exception as e:
         logging.error(f"❌ Error al generar o enviar el informe diario CSV: {e}", exc_info=True)

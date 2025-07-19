@@ -53,7 +53,7 @@ bot_params = config_manager.load_parameters() # Carga la configuración del bot 
 
 # Asignar los valores del diccionario cargado a las variables globales del bot.
 # Estos parámetros controlan la estrategia de trading y el comportamiento del bot.
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT"] # Lista de pares de trading a monitorear.
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"] # Lista de pares de trading a monitorear.
 INTERVALO = bot_params["INTERVALO"] # Intervalo de tiempo en segundos entre cada ciclo de trading principal.
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"] # Porcentaje del capital total a arriesgar por operación.
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"] # Porcentaje de ganancia para cerrar una posición (Take Profit).
@@ -286,17 +286,13 @@ def handle_telegram_commands():
                     elif command == "/get_positions_file": # Muestra el contenido del archivo de posiciones abiertas (para depuración).
                         with shared_data_lock: # Accede a OPEN_POSITIONS_FILE con el bloqueo
                              telegram_handler.send_positions_file_content(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE)
-                    elif command == "/convert_dust": # Comando para convertir saldos pequeños a BNB
-                        telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "⚙️ Intentando convertir saldos pequeños (dust) a BNB...")
-                        with shared_data_lock: # Protege el acceso al cliente de Binance si es necesario
-                            conversion_result = binance_utils.convert_dust_to_bnb(client)
-                        
-                        if conversion_result and conversion_result['status'] == 'success':
-                            telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"✅ {conversion_result['message']}")
-                        else:
-                            error_msg = conversion_result.get('message', 'Error desconocido al convertir dust.')
-                            telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ {error_msg}")
-                            logging.error(f"Fallo en la conversión de dust: {error_msg}")
+                    elif command == "/reset_beneficio": # NUEVO: Comando para resetear el beneficio acumulado
+                        with shared_data_lock:
+                            TOTAL_BENEFICIO_ACUMULADO = 0.0
+                            bot_params['TOTAL_BENEFICIO_ACUMULADO'] = 0.0
+                            config_manager.save_parameters(bot_params) # Guardar en Firestore/local
+                        telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "✅ Beneficio acumulado reseteado a cero.")
+                        logging.info("Beneficio acumulado reseteado a cero por comando de Telegram.")
                     else: # Comando no reconocido.
                         telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "Comando desconocido. Usa <code>/help</code> para ver los comandos disponibles.")
 
@@ -389,7 +385,7 @@ try:
 
         # --- LÓGICA PRINCIPAL DE TRADING ---
         # Ejecuta la lógica de trading solo si ha pasado el INTERVALO de tiempo configurado.
-        if (time.time() - last_trading_check_time) >= INTERVALO: # This check is redundant after the proactive cleanup
+        if (time.time() - last_trading_check_time) >= INTERVALO:
             logging.info(f"Iniciando ciclo de trading principal (cada {INTERVALO}s)...")
             general_message = "" # Variable para acumular mensajes de resumen del ciclo.
 
@@ -581,4 +577,3 @@ except Exception as e: # Captura cualquier excepción general en el bucle princi
     # En caso de un error inesperado, también se intenta detener el hilo de Telegram.
     telegram_stop_event.set()
     telegram_thread.join()
-

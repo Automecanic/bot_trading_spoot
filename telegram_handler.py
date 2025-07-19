@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 import os # Necesario para os.path.exists, os.path.basename, os.remove
-import csv # NUEVO: Necesario para trabajar con archivos CSV
+import csv # Necesario para trabajar con archivos CSV
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -32,7 +32,7 @@ def send_telegram_message(token, chat_id, message):
 
 def send_telegram_document(token, chat_id, file_path, caption=""):
     """
-    Envía un documento (ej. un archivo CSV de transacciones o JSON de posiciones) a un chat de Telegram específico.
+    Envía un documento (ej. un archivo CSV de transacciones) a un chat de Telegram específico.
     """
     if not token:
         logging.warning("⚠️ TOKEN de Telegram no configurado. No se pueden enviar documentos.")
@@ -77,7 +77,7 @@ def get_telegram_updates(token, offset=None):
 def send_keyboard_menu(token, chat_id, message_text="Selecciona una opción:"):
     """
     Envía un mensaje a Telegram que incluye un teclado personalizado con botones.
-    Este teclado aparece en lugar del teclado normal del dispositivo del usuario.
+    Este teclado aparece en lugar del teclado normal del dispositivo del dispositivo del usuario.
     """
     if not token:
         logging.warning("⚠️ TOKEN de Telegram no configurado. No se puede enviar el teclado personalizado.")
@@ -90,7 +90,7 @@ def send_keyboard_menu(token, chat_id, message_text="Selecciona una opción:"):
             [{'text': '/beneficio'}, {'text': '/get_params'}],
             [{'text': '/csv'}, {'text': '/get_positions_file'}],
             [{'text': '/vender BTCUSDT'}, {'text': '/vender ETHUSDT'}], # Añadido ETHUSDT para ejemplo
-            [{'text': '/convert_dust'}], # NUEVO: Botón para convertir dust
+            [{'text': '/reset_beneficio'}], # CAMBIO: Botón para resetear beneficio
             [{'text': '/help'}, {'text': '/hide_menu'}] # Añadido help y hide_menu
         ],
         'resize_keyboard': True,
@@ -169,7 +169,7 @@ def set_telegram_commands_menu(token):
         {"command": "csv", "description": "Generar y enviar informe CSV de transacciones"},
         {"command": "beneficio", "description": "Mostrar beneficio total acumulado"},
         {"command": "vender", "description": "Vender una posición (ej. /vender BTCUSDT)"},
-        {"command": "convert_dust", "description": "Convertir saldos pequeños (dust) a BNB"},
+        {"command": "reset_beneficio", "description": "Resetear beneficio acumulado a cero"}, # CAMBIO: Comando reset_beneficio
         {"command": "get_positions_file", "description": "Obtener archivo de posiciones abiertas"},
         {"command": "help", "description": "Mostrar ayuda y comandos disponibles"}
     ]
@@ -216,8 +216,12 @@ def send_positions_file_content(token, chat_id, file_path):
         
         # Definir los nombres de los campos (columnas) para el CSV
         # Aseguramos que 'Symbol' sea la primera columna
-        fieldnames = ['Symbol'] + list(next(iter(positions_data.values())).keys())
+        all_keys = set()
+        for data in positions_data.values():
+            all_keys.update(data.keys())
         
+        fieldnames = ['Symbol'] + sorted(list(all_keys)) # Ordenamos para consistencia
+
         # Crear una lista de diccionarios, donde cada diccionario es una fila del CSV
         csv_rows = []
         for symbol, data in positions_data.items():
@@ -266,7 +270,7 @@ def send_help_message(token, chat_id):
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n"
         "<b>Utilidades:</b>\n"
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
-        " - <code>/convert_dust</code>: Convierte saldos pequeños (dust) a BNB.\n"
+        " - <code>/reset_beneficio</code>: Resetear beneficio acumulado a cero.\n" # CAMBIO: Descripción del comando reset_beneficio
         " - <code>/get_positions_file</code>: Obtener archivo de posiciones abiertas.\n"
         " - <code>/menu</code>: Muestra el teclado de comandos principal.\n"
         " - <code>/hide_menu</code>: Oculta el teclado de comandos.\n\n"
@@ -275,4 +279,3 @@ def send_help_message(token, chat_id):
         "<i>Recuerda usar valores decimales para porcentajes y enteros para períodos/umbrales.</i>"
     )
     send_telegram_message(token, chat_id, help_message)
-
