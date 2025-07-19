@@ -4,54 +4,63 @@ import logging
 from datetime import datetime
 import telegram_handler
 import binance_utils # Necesario para obtener_precio_eur y obtener_saldos_formateados
+import firestore_utils # NUEVO: Importa el módulo para Firestore
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def generar_y_enviar_csv_ahora(telegram_token, telegram_chat_id, transacciones_diarias):
+# Nombre de la colección en Firestore para el historial de transacciones
+# Debe coincidir con la definida en trading_logic.py
+FIRESTORE_TRANSACTIONS_COLLECTION_PATH = f"artifacts/{os.getenv('__app_id', 'default-app-id')}/public/data/transactions_history"
+
+
+def generar_y_enviar_csv_ahora(telegram_token, telegram_chat_id):
     """
-    Genera un archivo CSV con las transacciones registradas hasta el momento y lo envía por Telegram.
-    Requiere el token y chat_id de Telegram, y la lista de transacciones diarias.
+    Genera un archivo CSV con TODAS las transacciones registradas en Firestore y lo envía por Telegram.
+    Requiere el token y chat_id de Telegram.
     """
-    if not transacciones_diarias:
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, "🚫 No hay transacciones registradas para generar el CSV.")
+    db = firestore_utils.get_firestore_db()
+    if not db:
+        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, "❌ Error: No se pudo conectar a Firestore para obtener transacciones.")
+        logging.error("❌ No se pudo conectar a Firestore para generar CSV bajo demanda.")
+        return
+
+    transacciones_firestore = []
+    try:
+        # Obtener todas las transacciones de Firestore
+        docs = db.collection(FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
+        for doc in docs:
+            transacciones_firestore.append(doc.to_dict())
+        logging.info(f"✅ {len(transacciones_firestore)} transacciones cargadas desde Firestore para CSV bajo demanda.")
+    except Exception as e:
+        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Error al cargar transacciones desde Firestore: {e}")
+        logging.error(f"❌ Error al cargar transacciones desde Firestore para CSV bajo demanda: {e}", exc_info=True)
+        return
+
+    if not transacciones_firestore:
+        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, "🚫 No hay transacciones registradas en Firestore para generar el CSV.")
         return
 
     fecha_actual = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     nombre_archivo_csv = f"transacciones_historico_{fecha_actual}.csv"
 
     try:
-        # NUEVO: Ajustar fieldnames para que coincidan con las claves del diccionario de transacción
-        fieldnames = [
-            'timestamp', 'symbol', 'tipo', 'precio', 'cantidad',
-            'valor_usdt', 'ganancia_usdt', 'motivo_venta'
-        ]
+        # Obtener todos los nombres de campo de todas las transacciones para el header del CSV
+        all_fieldnames = set()
+        for transaccion in transacciones_firestore:
+            all_fieldnames.update(transaccion.keys())
         
-        # Opcional: Si quieres nombres de columnas diferentes en el CSV, puedes mapearlos.
-        # Por ejemplo, si 'timestamp' debe ser 'FechaHora' en el CSV:
-        # fieldnames_csv = ['FechaHora', 'Símbolo', 'Tipo', 'Precio', 'Cantidad', 'ValorUSDT', 'GananciaPerdidaUSDT', 'MotivoVenta']
-        # writer = csv.DictWriter(csvfile, fieldnames=fieldnames_csv)
-        # writer.writeheader()
-        # for transaccion in transacciones_diarias:
-        #     # Crear un nuevo dict con los nombres de campo deseados
-        #     row = {
-        #         'FechaHora': transaccion.get('timestamp', ''),
-        #         'Símbolo': transaccion.get('symbol', ''),
-        #         'Tipo': transaccion.get('tipo', ''),
-        #         'Precio': transaccion.get('precio', 0.0),
-        #         'Cantidad': transaccion.get('cantidad', 0.0),
-        #         'ValorUSDT': transaccion.get('valor_usdt', 0.0),
-        #         'GananciaPerdidaUSDT': transaccion.get('ganancia_usdt', 0.0),
-        #         'MotivoVenta': transaccion.get('motivo_venta', '')
-        #     }
-        #     writer.writerow(row)
-        
+        # Ordenar los nombres de campo para consistencia, y priorizar 'timestamp' si existe
+        fieldnames = sorted(list(all_fieldnames))
+        if 'timestamp' in fieldnames:
+            fieldnames.remove('timestamp')
+            fieldnames.insert(0, 'timestamp') # Asegura que timestamp sea la primera columna
+
         with open(nombre_archivo_csv, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
             writer.writeheader()
-            for transaccion in transacciones_diarias:
-                writer.writerow(transaccion)
+            writer.writerows(transacciones_firestore)
 
         telegram_handler.send_telegram_document(telegram_token, telegram_chat_id, nombre_archivo_csv, f"📊 Informe de transacciones generado: {fecha_actual}")
         
@@ -62,31 +71,58 @@ def generar_y_enviar_csv_ahora(telegram_token, telegram_chat_id, transacciones_d
         if os.path.exists(nombre_archivo_csv):
             os.remove(nombre_archivo_csv)
 
-def enviar_informe_diario(telegram_token, telegram_chat_id, transacciones_diarias):
+def enviar_informe_diario(telegram_token, telegram_chat_id):
     """
-    Genera un archivo CSV con las transacciones registradas para el día y lo envía por Telegram.
-    Requiere el token y chat_id de Telegram, y la lista de transacciones diarias.
+    Genera un archivo CSV con las transacciones registradas para el día actual desde Firestore y lo envía por Telegram.
+    Requiere el token y chat_id de Telegram.
     """
-    if not transacciones_diarias:
-        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, "🚫 No hay transacciones registradas para el día de hoy.")
+    db = firestore_utils.get_firestore_db()
+    if not db:
+        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, "❌ Error: No se pudo conectar a Firestore para generar informe diario.")
+        logging.error("❌ No se pudo conectar a Firestore para generar informe diario.")
         return
 
     fecha_diario = datetime.now().strftime("%Y-%m-%d")
     nombre_archivo_diario_csv = f"transacciones_diarias_{fecha_diario}.csv"
     
+    transacciones_del_dia = []
     try:
-        # NUEVO: Ajustar fieldnames para que coincidan con las claves del diccionario de transacción
-        fieldnames = [
-            'timestamp', 'symbol', 'tipo', 'precio', 'cantidad',
-            'valor_usdt', 'ganancia_usdt', 'motivo_venta'
-        ]
+        # Filtrar transacciones por el día actual
+        # Firestore no soporta directamente filtros de fecha/hora complejos sin índices.
+        # Una forma simple es obtener todas y filtrar en Python, o usar un campo de fecha específico.
+        # Asumimos que 'timestamp' está en formato ISO (YYYY-MM-DDTHH:MM:SS.ffffff)
+        docs = db.collection(FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
+        for doc in docs:
+            transaccion = doc.to_dict()
+            if transaccion.get('timestamp', '').startswith(fecha_diario):
+                transacciones_del_dia.append(transaccion)
+        logging.info(f"✅ {len(transacciones_del_dia)} transacciones cargadas desde Firestore para el informe diario de {fecha_diario}.")
+
+    except Exception as e:
+        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, f"❌ Error al cargar transacciones diarias desde Firestore: {e}")
+        logging.error(f"❌ Error al cargar transacciones diarias desde Firestore: {e}", exc_info=True)
+        return
+
+    if not transacciones_del_dia:
+        telegram_handler.send_telegram_message(telegram_token, telegram_chat_id, "🚫 No hay transacciones registradas en Firestore para el día de hoy.")
+        return
+
+    try:
+        # Obtener todos los nombres de campo de todas las transacciones del día para el header del CSV
+        all_fieldnames = set()
+        for transaccion in transacciones_del_dia:
+            all_fieldnames.update(transaccion.keys())
+        
+        fieldnames = sorted(list(all_fieldnames))
+        if 'timestamp' in fieldnames:
+            fieldnames.remove('timestamp')
+            fieldnames.insert(0, 'timestamp')
 
         with open(nombre_archivo_diario_csv, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
             writer.writeheader()
-            for transaccion in transacciones_diarias:
-                writer.writerow(transaccion)
+            writer.writerows(transacciones_del_dia)
         telegram_handler.send_telegram_document(telegram_token, telegram_chat_id, nombre_archivo_diario_csv, f"📊 Informe diario de transacciones para {fecha_diario}")
     except Exception as e:
         logging.error(f"❌ Error al generar o enviar el informe diario CSV: {e}", exc_info=True)
@@ -94,8 +130,6 @@ def enviar_informe_diario(telegram_token, telegram_chat_id, transacciones_diaria
     finally:
         if os.path.exists(nombre_archivo_diario_csv):
             os.remove(nombre_archivo_diario_csv)
-    # Importante: No limpiar transacciones_diarias aquí, se debe hacer en el bucle principal
-    # para que el informe se envíe y luego se resetee para el nuevo día.
 
 def send_beneficio_message(client, total_beneficio_acumulado, telegram_token, telegram_chat_id):
     """
