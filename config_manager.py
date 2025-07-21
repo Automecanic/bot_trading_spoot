@@ -66,12 +66,12 @@ def load_parameters():
     logging.warning("⚠️ No se encontró archivo de configuración local o hubo un error. Cargando parámetros por defecto.")
     # Definición de los parámetros por defecto del bot.
     default_params = {
-        "INTERVALO": 900,  # CAMBIO: Intervalo de tiempo en segundos entre cada ciclo de trading principal (15 minutos).
+        "INTERVALO": 900,  # Intervalo de tiempo en segundos entre cada ciclo de trading principal (15 minutos).
         "RIESGO_POR_OPERACION_PORCENTAJE": 0.01, # Porcentaje del capital total a arriesgar por operación (1%).
-        "TAKE_PROFIT_PORCENTAJE": 0.04, # Porcentaje de ganancia para cerrar una posición (Take Profit) (4%).
-        "STOP_LOSS_PORCENTAJE": 0.025, # Porcentaje de pérdida para cerrar una posición (Stop Loss fijo) (2.5%).
-        "TRAILING_STOP_PORCENTAJE": 0.02, # Porcentaje para activar el Trailing Stop Loss (2%).
-        "EMA_PERIODO": 20, # CAMBIO: Período para el cálculo de la Media Móvil Exponencial (EMA).
+        "TAKE_PROFIT_PORCENTAJE": 0.05, # CAMBIO: Porcentaje de ganancia para cerrar una posición (Take Profit) (5%).
+        "STOP_LOSS_PORCENTAJE": 0.03, # CAMBIO: Porcentaje de pérdida para cerrar una posición (Stop Loss fijo) (3%).
+        "TRAILING_STOP_PORCENTAJE": 0.025, # CAMBIO: Porcentaje para activar el Trailing Stop Loss (2.5%).
+        "EMA_PERIODO": 20, # Período para el cálculo de la Media Móvil Exponencial (EMA).
         "RSI_PERIODO": 14, # Período para el cálculo del Índice de Fuerza Relativa (RSI).
         "RSI_UMBRAL_SOBRECOMPRA": 70, # Umbral superior del RSI para identificar condiciones de sobrecompra.
         "TOTAL_BENEFICIO_ACUMULADO": 0.0, # Beneficio total acumulado por el bot desde su inicio (inicialmente 0.0).
