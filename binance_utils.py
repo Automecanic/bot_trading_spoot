@@ -2,7 +2,9 @@ import logging
 from binance.client import Client
 
 # Configura el sistema de registro para este módulo.
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def obtener_saldo_moneda(client, asset):
     """
@@ -17,6 +19,7 @@ def obtener_saldo_moneda(client, asset):
         logging.error(f"❌ Error al obtener saldo de {asset}: {e}")
         return 0.0
 
+
 def obtener_precio_actual(client, symbol):
     """
     Obtiene el precio de mercado actual de un par de trading (símbolo) de Binance.
@@ -29,6 +32,7 @@ def obtener_precio_actual(client, symbol):
         logging.error(f"❌ Error al obtener precio de {symbol}: {e}")
         return 0.0
 
+
 def obtener_precio_eur(client):
     """
     Obtiene el tipo de cambio actual de USDT a EUR desde Binance (usando el par EURUSDT).
@@ -39,8 +43,10 @@ def obtener_precio_eur(client):
         eur_usdt_price = client.get_avg_price(symbol='EURUSDT')
         return 1 / float(eur_usdt_price['price'])
     except Exception as e:
-        logging.warning(f"⚠️ No se pudo obtener el precio de EURUSDT: {e}. Usando 0 para la conversión a EUR.")
+        logging.warning(
+            f"⚠️ No se pudo obtener el precio de EURUSDT: {e}. Usando 0 para la conversión a EUR.")
         return 0.0
+
 
 def get_step_size(client, symbol):
     """
@@ -54,11 +60,13 @@ def get_step_size(client, symbol):
         for f in info['filters']:
             if f['filterType'] == 'LOT_SIZE':
                 return float(f['stepSize'])
-        logging.warning(f"⚠️ No se encontró LOT_SIZE filter para {symbol}. Usando stepSize por defecto: 0.000001")
+        logging.warning(
+            f"⚠️ No se encontró LOT_SIZE filter para {symbol}. Usando stepSize por defecto: 0.000001")
         return 0.000001
     except Exception as e:
         logging.error(f"❌ Error al obtener stepSize para {symbol}: {e}")
         return 0.000001
+
 
 def ajustar_cantidad(cantidad, step_size):
     """
@@ -77,13 +85,16 @@ def ajustar_cantidad(cantidad, step_size):
 
     try:
         factor = 10**decimal_places
-        ajustada = (round(cantidad * factor / (step_size * factor)) * (step_size * factor)) / factor
-        
+        ajustada = (round(cantidad * factor / (step_size * factor))
+                    * (step_size * factor)) / factor
+
         formatted_quantity_str = f"{ajustada:.{decimal_places}f}"
         return float(formatted_quantity_str)
     except Exception as e:
-        logging.error(f"❌ Error al ajustar cantidad {cantidad} con step {step_size}: {e}")
+        logging.error(
+            f"❌ Error al ajustar cantidad {cantidad} con step {step_size}: {e}")
         return 0.0
+
 
 def get_total_capital_usdt(client, posiciones_abiertas):
     """
@@ -93,15 +104,16 @@ def get_total_capital_usdt(client, posiciones_abiertas):
     try:
         saldo_usdt = obtener_saldo_moneda(client, "USDT")
         capital_total_usdt = saldo_usdt
-        
+
         for symbol, pos in posiciones_abiertas.items():
             precio_actual = obtener_precio_actual(client, symbol)
             capital_total_usdt += pos['cantidad_base'] * precio_actual
-        
+
         return capital_total_usdt
     except Exception as e:
         logging.error(f"❌ Error al calcular el capital total en USDT: {e}")
         return 0.0
+
 
 def obtener_saldos_formateados(client, posiciones_abiertas):
     """
@@ -111,8 +123,9 @@ def obtener_saldos_formateados(client, posiciones_abiertas):
     """
     try:
         saldo_usdt = obtener_saldo_moneda(client, "USDT")
-        capital_total_usdt = get_total_capital_usdt(client, posiciones_abiertas) # Usa la nueva función
-        
+        capital_total_usdt = get_total_capital_usdt(
+            client, posiciones_abiertas)  # Usa la nueva función
+
         eur_usdt_rate = obtener_precio_eur(client)
         capital_total_eur = capital_total_usdt * eur_usdt_rate if eur_usdt_rate else 0
 
@@ -122,6 +135,7 @@ def obtener_saldos_formateados(client, posiciones_abiertas):
     except Exception as e:
         logging.error(f"❌ Error al obtener saldos formateados: {e}")
         return "❌ Error al obtener saldos."
+
 
 def convert_dust_to_bnb(client):
     """
@@ -136,35 +150,38 @@ def convert_dust_to_bnb(client):
 
         # No necesitamos obtener todos los símbolos de trading válidos aquí,
         # ya que client.transfer_dust() manejará los activos no elegibles.
-        
+
         for balance in balances:
             asset = balance['asset']
             free = float(balance['free'])
-            
+
             # Considerar cualquier activo que no sea USDT o BNB y tenga un saldo libre positivo.
             # Dejaremos que la API de Binance determine si es "dust" elegible.
             if asset not in ["USDT", "BNB"] and free > 0:
                 dust_assets.append(asset)
-                logging.debug(f"Añadiendo {free:.8f} {asset} a la lista de posibles activos para convertir a dust.")
+                logging.debug(
+                    f"Añadiendo {free:.8f} {asset} a la lista de posibles activos para convertir a dust.")
 
         if not dust_assets:
-            logging.info("No se encontraron activos con saldo positivo (excluyendo USDT/BNB) para intentar convertir a BNB (dust).")
+            logging.info(
+                "No se encontraron activos con saldo positivo (excluyendo USDT/BNB) para intentar convertir a BNB (dust).")
             return {"status": "success", "message": "No se encontraron activos con saldo positivo (excluyendo USDT/BNB) para intentar convertir a BNB (dust)."}
 
-        logging.info(f"Intentando convertir los siguientes activos a BNB: {', '.join(dust_assets)}")
-        
+        logging.info(
+            f"Intentando convertir los siguientes activos a BNB: {', '.join(dust_assets)}")
+
         # Realizar la transferencia de dust. Binance API ignorará los activos no elegibles.
         result = client.transfer_dust(asset=dust_assets)
-        
+
         if result and 'totalServiceCharge' in result and result['totalServiceCharge'] is not None:
             total_transfered = float(result['totalTransfered'])
             total_service_charge = float(result['totalServiceCharge'])
-            
+
             converted_assets_info = [
                 f"{float(item['amount']) if 'amount' in item else 'N/A'} {item['asset']}"
                 for item in result.get('transferResult', []) if 'amount' in item and float(item['amount']) > 0
             ]
-            
+
             if converted_assets_info:
                 message = (f"✅ Conversión de dust a BNB exitosa!\n"
                            f"Total convertido a BNB: {total_transfered:.8f}\n"
@@ -182,5 +199,8 @@ def convert_dust_to_bnb(client):
             return {"status": "failed", "message": message, "result": result}
 
     except Exception as e:
-        logging.error(f"❌ Error al intentar convertir dust a BNB: {e}", exc_info=True)
+        # Si ocurre cualquier excepción durante la conversión de dust, se registra el error con el traceback completo.
+        logging.error(
+            f"❌ Error al intentar convertir dust a BNB: {e}", exc_info=True)
+        # Devuelve un diccionario indicando el error y el mensaje correspondiente.
         return {"status": "error", "message": f"❌ Error al intentar convertir dust a BNB: {e}"}
