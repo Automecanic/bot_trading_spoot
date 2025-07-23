@@ -85,11 +85,10 @@ def ajustar_cantidad(cantidad, step_size):
         logging.error(f"❌ Error al ajustar cantidad {cantidad} con step {step_size}: {e}")
         return 0.0
 
-def obtener_saldos_formateados(client, posiciones_abiertas):
+def get_total_capital_usdt(client, posiciones_abiertas):
     """
-    Formatea un mensaje con los saldos de USDT disponibles y el capital total estimado (en USDT y EUR).
-    El capital total incluye el USDT disponible y el valor actual de todas las posiciones abiertas.
-    Requiere el objeto 'client' de Binance y el diccionario 'posiciones_abiertas'.
+    Calcula y devuelve el capital total de la cuenta en USDT.
+    Incluye el USDT disponible y el valor actual de todas las posiciones abiertas.
     """
     try:
         saldo_usdt = obtener_saldo_moneda(client, "USDT")
@@ -98,6 +97,21 @@ def obtener_saldos_formateados(client, posiciones_abiertas):
         for symbol, pos in posiciones_abiertas.items():
             precio_actual = obtener_precio_actual(client, symbol)
             capital_total_usdt += pos['cantidad_base'] * precio_actual
+        
+        return capital_total_usdt
+    except Exception as e:
+        logging.error(f"❌ Error al calcular el capital total en USDT: {e}")
+        return 0.0
+
+def obtener_saldos_formateados(client, posiciones_abiertas):
+    """
+    Formatea un mensaje con los saldos de USDT disponibles y el capital total estimado (en USDT y EUR).
+    El capital total incluye el USDT disponible y el valor actual de todas las posiciones abiertas.
+    Requiere el objeto 'client' de Binance y el diccionario 'posiciones_abiertas'.
+    """
+    try:
+        saldo_usdt = obtener_saldo_moneda(client, "USDT")
+        capital_total_usdt = get_total_capital_usdt(client, posiciones_abiertas) # Usa la nueva función
         
         eur_usdt_rate = obtener_precio_eur(client)
         capital_total_eur = capital_total_usdt * eur_usdt_rate if eur_usdt_rate else 0
@@ -170,4 +184,3 @@ def convert_dust_to_bnb(client):
     except Exception as e:
         logging.error(f"❌ Error al intentar convertir dust a BNB: {e}", exc_info=True)
         return {"status": "error", "message": f"❌ Error al intentar convertir dust a BNB: {e}"}
-

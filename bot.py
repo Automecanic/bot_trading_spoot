@@ -53,7 +53,7 @@ bot_params = config_manager.load_parameters() # Carga la configuración del bot 
 
 # Asignar los valores del diccionario cargado a las variables globales del bot.
 # Estos parámetros controlan la estrategia de trading y el comportamiento del bot.
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT", "MATICUSDT"] # Lista de pares de trading a monitorear.
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT","XRPUSDT", "DOGEUSDT"] # Lista de pares de trading a monitorear.
 INTERVALO = bot_params["INTERVALO"] # Intervalo de tiempo en segundos entre cada ciclo de trading principal.
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"] # Porcentaje del capital total a arriesgar por operación.
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"] # Porcentaje de ganancia para cerrar una posición (Take Profit).
@@ -389,6 +389,11 @@ try:
             logging.info(f"Iniciando ciclo de trading principal (cada {INTERVALO}s)...")
             general_message = "" # Variable para acumular mensajes de resumen del ciclo.
 
+            # Obtener el capital total una vez por ciclo para usarlo en el cálculo de la cantidad a comprar
+            with shared_data_lock: # Protege el acceso a posiciones_abiertas
+                total_capital = binance_utils.get_total_capital_usdt(client, posiciones_abiertas)
+            
+
             for symbol in SYMBOLS: # Itera sobre cada símbolo de trading configurado.
                 base = symbol.replace("USDT", "") # Extrae la criptomoneda base (ej. BTC de BTCUSDT).
                 
@@ -414,6 +419,7 @@ try:
 
                 # --- LÓGICA DE COMPRA ---
                 saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT") # Obtiene el saldo disponible de USDT.
+
                 # Condiciones para entrar en una posición (compra):
                 # 1. Saldo USDT suficiente (>10).
                 # 2. Precio actual por encima de la EMA (tendencia alcista).
@@ -424,10 +430,11 @@ try:
                     rsi_valor < RSI_UMBRAL_SOBRECOMPRA and 
                     symbol not in posiciones_abiertas):
                     
-                    # Calcula la cantidad a comprar utilizando trading_logic.
+                    # Calcula la cantidad a comprar utilizando trading_logic. 
                     cantidad = trading_logic.calcular_cantidad_a_comprar(
-                        client, saldo_usdt, precio_actual, STOP_LOSS_PORCENTAJE, symbol, RIESGO_POR_OPERACION_PORCENTAJE
+                    client, saldo_usdt, precio_actual, STOP_LOSS_PORCENTAJE, symbol, RIESGO_POR_OPERACION_PORCENTAJE, total_capital
                     )
+                    
                     
                     if cantidad > 0: # Si la cantidad a comprar es válida.
                         with shared_data_lock: # Protege el acceso a posiciones_abiertas y transacciones_diarias

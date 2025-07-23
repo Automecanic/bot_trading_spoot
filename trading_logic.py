@@ -30,6 +30,9 @@ def calcular_ema_rsi(client, symbol, ema_periodo, rsi_periodo):
     try:
         # Obtener datos históricos (velas) para el cálculo de indicadores.
         # Se obtienen 100 velas para asegurar suficientes datos para EMA y RSI.
+        # NOTA: KLINE_INTERVAL_1MINUTE se usaba aquí. Si el INTERVALO del bot es 15m (900s),
+        # deberíamos obtener klines de 15 minutos. Esto requiere pasar KLINE_INTERVAL_15MINUTE
+        # desde trading_bot_completo.py. Por ahora, se mantiene 1MINUTE, pero es una mejora futura.
         klines = client.get_historical_klines(symbol, KLINE_INTERVAL_1MINUTE, "100 minutes ago UTC")
         
         # Extraer los precios de cierre de las velas.
@@ -85,17 +88,21 @@ def calcular_ema_rsi(client, symbol, ema_periodo, rsi_periodo):
         logging.error(f"❌ Error al calcular EMA/RSI para {symbol}: {e}", exc_info=True)
         return None, None
 
-def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_porcentaje, symbol, riesgo_por_operacion_porcentaje):
+# CAMBIO CRÍTICO: Añadir 'capital_total' como parámetro
+def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_porcentaje, symbol, riesgo_por_operacion_porcentaje, capital_total):
     """
     Calcula la cantidad de criptomoneda a comprar basándose en el saldo USDT disponible,
-    el precio actual, el stop loss y el porcentaje de riesgo por operación.
+    el precio actual, el stop loss y el porcentaje de riesgo por operación,
+    asegurando que el riesgo se calcule sobre el capital total.
     """
     if precio_actual <= 0:
         logging.warning("❌ Precio actual es cero o negativo. No se puede calcular la cantidad a comprar.")
         return 0.0
 
-    # Calcular el capital a arriesgar en USDT
-    capital_a_riesgar_usdt = saldo_usdt * riesgo_por_operacion_porcentaje
+    # CAMBIO: Calcular el capital a arriesgar en USDT basado en el CAPITAL TOTAL
+    # Esto asegura que el riesgo por operación se mantenga constante respecto al tamaño de la cartera.
+    capital_a_riesgar_usdt = capital_total * riesgo_por_operacion_porcentaje
+    logging.info(f"DEBUG: Capital Total: {capital_total:.2f} USDT, Riesgo por Operación: {riesgo_por_operacion_porcentaje*100:.2f}%, Capital a Arriesgar: {capital_a_riesgar_usdt:.2f} USDT")
 
     # Calcular la pérdida máxima por unidad (si se alcanza el stop loss)
     perdida_por_unidad = precio_actual * stop_loss_porcentaje
@@ -112,20 +119,28 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
     cantidad_ajustada = binance_utils.ajustar_cantidad(cantidad_teorica, step_size)
 
     # Asegurarse de que la cantidad ajustada no exceda el saldo disponible
-    max_cantidad_posible = saldo_usdt / precio_actual
-    cantidad_final = min(cantidad_ajustada, max_cantidad_posible)
+    # Es crucial no intentar comprar más USDT de los que se tienen disponibles.
+    max_cantidad_posible_por_saldo = saldo_usdt / precio_actual
+    cantidad_final = min(cantidad_ajustada, max_cantidad_posible_por_saldo)
     
     # Asegurar que la cantidad final sea un múltiplo del step_size
     cantidad_final = binance_utils.ajustar_cantidad(cantidad_final, step_size)
 
-    # Binance tiene un valor mínimo para las órdenes, por ejemplo, 10 USDT
-    # Aunque la API no siempre lo expone directamente como un filtro fácil de obtener,
-    # podemos usar un umbral general o intentar obtener el MIN_NOTIONAL filter.
-    # Para simplificar, asumiremos un valor mínimo en USDT.
-    min_notional = 10.0 # Valor mínimo de la orden en USDT (ej. 10 USDT)
-    
+    # Obtener el filtro MIN_NOTIONAL de Binance para el símbolo
+    min_notional = 0.0
+    info = client.get_symbol_info(symbol)
+    for f in info['filters']:
+        if f['filterType'] == 'MIN_NOTIONAL':
+            min_notional = float(f['minNotional'])
+            break # Salir del bucle una vez encontrado
+
     if (cantidad_final * precio_actual) < min_notional:
         logging.warning(f"⚠️ La cantidad calculada para {symbol} ({cantidad_final:.6f} {symbol.replace('USDT', '')}) resulta en un valor inferior al mínimo nocional ({min_notional} USDT).")
+        return 0.0
+    
+    # Asegurarse de que la cantidad final no sea cero o muy cercana a cero
+    if cantidad_final <= 0.00000001: # Un umbral muy pequeño para evitar cantidades insignificantes
+        logging.warning(f"⚠️ La cantidad final calculada para {symbol} ({cantidad_final:.8f}) es insignificante. Retornando 0.")
         return 0.0
 
     return cantidad_final
@@ -226,8 +241,8 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
             # Si la posición está en el registro del bot pero no hay saldo real, eliminarla
             if symbol in posiciones_abiertas:
                 del posiciones_abiertas[symbol]
-                position_manager.save_open_positions_debounced(posiciones_abiertas)
-                logging.info(f"Posición de {symbol} eliminada del registro interno debido a saldo insuficiente.")
+            position_manager.save_open_positions_debounced(posiciones_abiertas)
+            logging.info(f"Posición de {symbol} eliminada del registro interno debido a saldo insuficiente.")
             return None
         
         # Verificar si el valor nocional es suficiente
@@ -242,8 +257,8 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
             # Si la posición está en el registro del bot pero su valor es muy bajo, eliminarla
             if symbol in posiciones_abiertas:
                 del posiciones_abiertas[symbol]
-                position_manager.save_open_positions_debounced(posiciones_abiertas)
-                logging.info(f"Posición de {symbol} eliminada del registro interno debido a valor nocional insuficiente.")
+            position_manager.save_open_positions_debounced(posiciones_abiertas)
+            logging.info(f"Posición de {symbol} eliminada del registro interno debido a valor nocional insuficiente.")
             return None
             
         # Ejecutar orden de venta a mercado
