@@ -89,8 +89,11 @@ TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"]
 STOP_LOSS_PORCENTAJE = bot_params["STOP_LOSS_PORCENTAJE"]
 # Porcentaje para activar el Trailing Stop Loss.
 TRAILING_STOP_PORCENTAJE = bot_params["TRAILING_STOP_PORCENTAJE"]
-# Período para el cálculo de la Media Móvil Exponencial (EMA).
-EMA_PERIODO = bot_params["EMA_PERIODO"]
+# CAMBIO: Renombrado EMA_PERIODO a EMA_CORTA_PERIODO y añadido EMA_LARGA_PERIODO
+# Período para la EMA corta (default 20)
+EMA_CORTA_PERIODO = bot_params.get("EMA_CORTA_PERIODO", 20)
+# Período para la EMA larga (default 200)
+EMA_LARGA_PERIODO = bot_params.get("EMA_LARGA_PERIODO", 200)
 # Período para el cálculo del Índice de Fuerza Relativa (RSI).
 RSI_PERIODO = bot_params["RSI_PERIODO"]
 # Umbral superior del RSI para identificar condiciones de sobrecompra.
@@ -99,6 +102,12 @@ RSI_UMBRAL_SOBRECOMPRA = bot_params["RSI_UMBRAL_SOBRECOMPRA"]
 TOTAL_BENEFICIO_ACUMULADO = bot_params["TOTAL_BENEFICIO_ACUMULADO"]
 # Porcentaje de ganancia para mover el Stop Loss a Breakeven.
 BREAKEVEN_PORCENTAJE = bot_params["BREAKEVEN_PORCENTAJE"]
+
+# Asegurarse de que los nuevos parámetros estén en bot_params si no estaban
+bot_params['EMA_CORTA_PERIODO'] = EMA_CORTA_PERIODO
+bot_params['EMA_LARGA_PERIODO'] = EMA_LARGA_PERIODO
+# Guardar los parámetros actualizados para asegurar persistencia
+config_manager.save_parameters(bot_params)
 
 # =================== INICIALIZACIÓN DE CLIENTES BINANCE Y TELEGRAM ===================
 
@@ -169,7 +178,7 @@ def handle_telegram_commands():
     """
     # Declara las variables globales que esta función puede modificar.
     global last_update_id, RIESGO_POR_OPERACION_PORCENTAJE, TAKE_PROFIT_PORCENTAJE, \
-        STOP_LOSS_PORCENTAJE, TRAILING_STOP_PORCENTAJE, EMA_PERIODO, RSI_PERIODO, \
+        STOP_LOSS_PORCENTAJE, TRAILING_STOP_PORCENTAJE, EMA_CORTA_PERIODO, EMA_LARGA_PERIODO, RSI_PERIODO, \
         RSI_UMBRAL_SOBRECOMPRA, INTERVALO, bot_params, TOTAL_BENEFICIO_ACUMULADO, \
         posiciones_abiertas, transacciones_diarias
 
@@ -265,18 +274,32 @@ def handle_telegram_commands():
                         else:
                             telegram_handler.send_telegram_message(
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/set_riesgo &lt;porcentaje_decimal_ej_0.01&gt;</code>")
-                    elif command == "/set_ema_periodo":
+                    # CAMBIO: Comando para EMA Corta
+                    elif command == "/set_ema_corta_periodo":
                         if len(parts) == 2:
                             new_value = int(parts[1])
                             with shared_data_lock:  # Protege el acceso a bot_params
-                                EMA_PERIODO = new_value
-                                bot_params['EMA_PERIODO'] = new_value
+                                EMA_CORTA_PERIODO = new_value
+                                bot_params['EMA_CORTA_PERIODO'] = new_value
                                 config_manager.save_parameters(bot_params)
                             telegram_handler.send_telegram_message(
-                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"✅ Período EMA establecido en: <b>{new_value}</b>")
+                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"✅ Período EMA Corta establecido en: <b>{new_value}</b>")
                         else:
                             telegram_handler.send_telegram_message(
-                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/set_ema_periodo &lt;numero_entero_ej_10&gt;</code>")
+                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/set_ema_corta_periodo &lt;numero_entero_ej_20&gt;</code>")
+                    # NUEVO COMANDO: Para EMA Larga
+                    elif command == "/set_ema_larga_periodo":
+                        if len(parts) == 2:
+                            new_value = int(parts[1])
+                            with shared_data_lock:  # Protege el acceso a bot_params
+                                EMA_LARGA_PERIODO = new_value
+                                bot_params['EMA_LARGA_PERIODO'] = new_value
+                                config_manager.save_parameters(bot_params)
+                            telegram_handler.send_telegram_message(
+                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"✅ Período EMA Larga establecido en: <b>{new_value}</b>")
+                        else:
+                            telegram_handler.send_telegram_message(
+                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/set_ema_larga_periodo &lt;numero_entero_ej_200&gt;</code>")
                     elif command == "/set_rsi_periodo":
                         if len(parts) == 2:
                             new_value = int(parts[1])
@@ -542,31 +565,39 @@ try:
                 precio_actual = binance_utils.obtener_precio_actual(
                     client, symbol)
 
-                ema_valor, rsi_valor = trading_logic.calcular_ema_rsi(
-                    client, symbol, EMA_PERIODO, RSI_PERIODO)
+                # CAMBIO: Llamada a calcular_ema_rsi con ambos períodos de EMA
+                ema_corta_valor, ema_larga_valor, rsi_valor = trading_logic.calcular_ema_rsi(
+                    client, symbol, EMA_CORTA_PERIODO, EMA_LARGA_PERIODO, RSI_PERIODO
+                )
 
                 # Si no se pudieron calcular los indicadores, salta este símbolo.
-                if ema_valor is None or rsi_valor is None:
+                if ema_corta_valor is None or ema_larga_valor is None or rsi_valor is None:
                     logging.warning(
-                        f"⚠️ No se pudieron calcular EMA o RSI para {symbol}. Saltando este símbolo en este ciclo.")
+                        f"⚠️ No se pudieron calcular EMA(s) o RSI para {symbol}. Saltando este símbolo en este ciclo.")
                     continue
 
                 # Construye un mensaje de estado para el símbolo actual.
                 mensaje_simbolo = (
                     f"📊 <b>{symbol}</b>\n"
                     f"Precio actual: {precio_actual:.2f} USDT\n"
-                    f"EMA ({EMA_PERIODO}m): {ema_valor:.2f}\n"
+                    # CAMBIO: Mostrar EMA Corta
+                    f"EMA Corta ({EMA_CORTA_PERIODO}m): {ema_corta_valor:.2f}\n"
+                    # CAMBIO: Mostrar EMA Larga
+                    f"EMA Larga ({EMA_LARGA_PERIODO}m): {ema_larga_valor:.2f}\n"
                     f"RSI ({RSI_PERIODO}m): {rsi_valor:.2f}"
                 )
 
                 # --- LÓGICA DE COMPRA ---
                 # Condiciones para entrar en una posición (compra):
                 # 1. Saldo USDT suficiente (>10).
-                # 2. Precio actual por encima de la EMA (tendencia alcista).
-                # 3. RSI por debajo del umbral de sobrecompra (no sobrecomprado).
-                # 4. No hay una posición abierta para este símbolo.
+                # 2. Precio actual por encima de la EMA corta (tendencia alcista a corto plazo).
+                # 3. Precio actual por encima de la EMA larga (tendencia alcista general - FILTRO CLAVE).
+                # 4. RSI por debajo del umbral de sobrecompra (no sobrecomprado).
+                # 5. No hay una posición abierta para este símbolo.
                 if (saldo_usdt > 10 and  # Mantener un umbral mínimo para evitar micro-compras
-                    precio_actual > ema_valor and
+                    precio_actual > ema_corta_valor and
+                    # CAMBIO CLAVE: Filtro de tendencia alcista general
+                    precio_actual > ema_larga_valor and
                     rsi_valor < RSI_UMBRAL_SOBRECOMPRA and
                         symbol not in posiciones_abiertas):
 
