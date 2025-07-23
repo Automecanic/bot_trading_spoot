@@ -172,8 +172,54 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
     Registra la posición, la transacción y envía una notificación a Telegram.
     """
     try:
+        # --- Pre-check antes de colocar la orden ---
+        # Volver a obtener el saldo USDT más reciente justo antes de colocar la orden
+        latest_saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT")
+        latest_precio_actual = binance_utils.obtener_precio_actual(
+            client, symbol)
+
+        if latest_precio_actual <= 0:
+            logging.error(
+                f"❌ No se pudo obtener el precio actual para {symbol} justo antes de la compra. Abortando.")
+            telegram_handler.send_telegram_message(
+                telegram_bot_token, telegram_chat_id, f"❌ Error: No se pudo obtener precio para <b>{symbol}</b> antes de comprar.")
+            return None
+
+        # Recalcular la cantidad máxima posible basada en el saldo más reciente
+        max_cantidad_posible_por_saldo_latest = latest_saldo_usdt / latest_precio_actual
+
+        # Asegurarse de que la cantidad a comprar no exceda el último saldo disponible
+        # y también respete el min_notional y step_size de Binance
+        step_size = binance_utils.get_step_size(client, symbol)
+        info = client.get_symbol_info(symbol)
+        min_notional = 0.0
+        min_qty = 0.0
+        for f in info['filters']:
+            if f['filterType'] == 'MIN_NOTIONAL':
+                min_notional = float(f['minNotional'])
+            elif f['filterType'] == 'LOT_SIZE':
+                min_qty = float(f['minQty'])
+
+        # Tomar el mínimo de la cantidad originalmente calculada y la última cantidad posible
+        final_cantidad_to_buy = min(
+            cantidad, max_cantidad_posible_por_saldo_latest)
+        final_cantidad_to_buy = binance_utils.ajustar_cantidad(
+            final_cantidad_to_buy, step_size)
+
+        # Verificación final contra min_notional y min_qty
+        if final_cantidad_to_buy <= 0 or final_cantidad_to_buy < min_qty or (final_cantidad_to_buy * latest_precio_actual) < min_notional:
+            logging.warning(
+                f"⚠️ Cantidad final para {symbol} ({final_cantidad_to_buy:.8f}) o valor nocional ({final_cantidad_to_buy * latest_precio_actual:.2f} USDT) es insuficiente para la compra. Saldo USDT: {latest_saldo_usdt:.2f}. Abortando.")
+            telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
+                                                   f"⚠️ Compra de <b>{symbol}</b> abortada: Saldo insuficiente o cantidad/valor mínimo no alcanzado. Saldo USDT: {latest_saldo_usdt:.2f}.")
+            return None
+
+        logging.info(
+            f"Intentando COMPRA de {symbol} con cantidad: {final_cantidad_to_buy:.8f} (Saldo USDT justo antes: {latest_saldo_usdt:.2f})")
+
         # Ejecutar orden de compra a mercado
-        order = client.order_market_buy(symbol=symbol, quantity=cantidad)
+        order = client.order_market_buy(
+            symbol=symbol, quantity=final_cantidad_to_buy)
 
         # Procesar la respuesta de la orden
         if order and order['status'] == 'FILLED':
