@@ -15,6 +15,7 @@ from binance.enums import *
 # Importa datetime para trabajar con fechas y horas, y timedelta para cálculos de tiempo.
 from datetime import datetime, timedelta
 import threading  # Importa el módulo threading para trabajar con hilos.
+import requests  # Importa requests para manejar excepciones de red
 
 # Importa los módulos refactorizados que contienen la lógica modularizada del bot.
 # Módulo para gestionar la configuración del bot (cargar/guardar parámetros).
@@ -89,7 +90,6 @@ TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"]
 STOP_LOSS_PORCENTAJE = bot_params["STOP_LOSS_PORCENTAJE"]
 # Porcentaje para activar el Trailing Stop Loss.
 TRAILING_STOP_PORCENTAJE = bot_params["TRAILING_STOP_PORCENTAJE"]
-# CAMBIO: Renombrado EMA_PERIODO a EMA_CORTA_PERIODO y añadido EMA_LARGA_PERIODO
 # Período para la EMA corta (default 20)
 EMA_CORTA_PERIODO = bot_params.get("EMA_CORTA_PERIODO", 20)
 # Período para la EMA larga (default 200)
@@ -112,8 +112,10 @@ config_manager.save_parameters(bot_params)
 # =================== INICIALIZACIÓN DE CLIENTES BINANCE Y TELEGRAM ===================
 
 # Inicializa el cliente de la API de Binance.
-# Crea una instancia del cliente de Binance con las claves API.
-client = Client(API_KEY, API_SECRET, testnet=True)
+# CAMBIO: Aumentar el timeout para las solicitudes de la API de Binance
+# Se pasa un diccionario 'requests_params' con el 'timeout' deseado en segundos.
+client = Client(API_KEY, API_SECRET, testnet=True, requests_params={
+                'timeout': 30})  # Aumentado a 30 segundos
 # Configura la URL de la API para usar la red de prueba (Testnet) de Binance.
 client.API_URL = 'https://testnet.binance.vision/api'
 
@@ -135,6 +137,9 @@ try:
     if not SYMBOLS:
         logging.error(
             "❌ No hay símbolos de trading válidos configurados. El bot no operará.")
+except requests.exceptions.ReadTimeout as e:
+    logging.error(
+        f"❌ Error de tiempo de espera al obtener información de intercambio de Binance: {e}. Esto puede deberse a problemas de red o sobrecarga de la API. El bot continuará con la lista de símbolos predefinida, lo que podría causar errores si los símbolos no son válidos.", exc_info=True)
 except Exception as e:
     logging.error(
         f"❌ Error al obtener información de intercambio de Binance para filtrar símbolos: {e}", exc_info=True)
@@ -393,7 +398,7 @@ def handle_telegram_commands():
                                     TOTAL_BENEFICIO_ACUMULADO = bot_params['TOTAL_BENEFICIO_ACUMULADO']
                             else:
                                 telegram_handler.send_telegram_message(
-                                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Símbolo <b>{symbol_to_sell}</b> no reconocido o no monitoreado por el bot.")
+                                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Símbolo <b>{symbol}</b> no reconocido o no monitoreado por el bot.")
                         else:
                             telegram_handler.send_telegram_message(
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/vender &lt;SIMBOLO_USDT&gt;</code> (ej. /vender BTCUSDT)")
