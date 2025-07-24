@@ -107,42 +107,55 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
     """
     Calcula la cantidad de criptomoneda a comprar basándose en el saldo USDT disponible,
     el precio actual, el stop loss y el porcentaje de riesgo por operación,
-    asegurando que el riesgo se calcule sobre el capital total.
+    asegurando que el riesgo se calcule sobre el capital total y la cantidad no exceda el saldo disponible.
     """
     if precio_actual <= 0:
         logging.warning(
             "❌ Precio actual es cero o negativo. No se puede calcular la cantidad a comprar.")
         return 0.0
 
-    # CAMBIO: Calcular el capital a arriesgar en USDT basado en el CAPITAL TOTAL
-    # Esto asegura que el riesgo por operación se mantenga constante respecto al tamaño de la cartera.
-    capital_a_riesgar_usdt = capital_total * riesgo_por_operacion_porcentaje
+    # 1. Calcular el monto máximo en USDT que estamos dispuestos a arriesgar en esta operación.
+    # Este es el monto que se perdería si el stop loss se activa.
+    max_usdt_a_riesgar = capital_total * riesgo_por_operacion_porcentaje
     logging.info(
-        f"DEBUG: Capital Total: {capital_total:.2f} USDT, Riesgo por Operación: {riesgo_por_operacion_porcentaje*100:.2f}%, Capital a Arriesgar: {capital_a_riesgar_usdt:.2f} USDT")
+        f"DEBUG: Capital Total: {capital_total:.2f} USDT, Riesgo por Operación: {riesgo_por_operacion_porcentaje*100:.2f}%, Máximo USDT a Arriesgar: {max_usdt_a_riesgar:.2f} USDT")
 
-    # Calcular la pérdida máxima por unidad (si se alcanza el stop loss)
-    perdida_por_unidad = precio_actual * stop_loss_porcentaje
-
-    if perdida_por_unidad <= 0:
+    # 2. Calcular la cantidad de la moneda base que, si cae el % del stop loss,
+    # resultaría en la pérdida de 'max_usdt_a_riesgar'.
+    # Formula: Cantidad = (Máximo USDT a Arriesgar) / (Precio actual * Stop Loss Porcentaje)
+    # Esta es la cantidad "ideal" basada en el riesgo.
+    if stop_loss_porcentaje <= 0:
         logging.warning(
-            "❌ Pérdida por unidad es cero o negativa. Revisa el stop_loss_porcentaje.")
+            "❌ STOP_LOSS_PORCENTAJE es cero o negativo. No se puede calcular la cantidad a comprar.")
         return 0.0
 
-    # Calcular la cantidad teórica basada en el riesgo
-    cantidad_teorica = capital_a_riesgar_usdt / perdida_por_unidad
+    cantidad_ideal_por_riesgo = max_usdt_a_riesgar / \
+        (precio_actual * stop_loss_porcentaje)
 
-    # Obtener el stepSize para el símbolo para ajustar la cantidad
+    # 3. Determinar el monto en USDT a invertir para comprar esa cantidad ideal.
+    # Monto a invertir = Cantidad ideal * Precio actual
+    usdt_para_cantidad_ideal = cantidad_ideal_por_riesgo * precio_actual
+    logging.info(
+        f"DEBUG: USDT necesario para cantidad ideal por riesgo ({cantidad_ideal_por_riesgo:.8f}): {usdt_para_cantidad_ideal:.2f} USDT")
+
+    # 4. Asegurarse de que el monto a invertir no exceda el saldo USDT disponible.
+    # El monto real a invertir será el mínimo entre el saldo disponible y el monto calculado.
+    usdt_a_invertir_real = min(usdt_para_cantidad_ideal, saldo_usdt)
+    logging.info(
+        f"DEBUG: Saldo USDT disponible: {saldo_usdt:.2f} USDT, USDT a invertir real: {usdt_a_invertir_real:.2f} USDT")
+
+    # 5. Calcular la cantidad final de la criptomoneda a comprar basada en el monto real a invertir.
+    if precio_actual <= 0:  # Doble chequeo, aunque ya se hizo al inicio
+        logging.warning(
+            "❌ Precio actual es cero o negativo al recalcular cantidad final. Abortando.")
+        return 0.0
+
+    cantidad_final_calculada = usdt_a_invertir_real / precio_actual
+
+    # 6. Ajustar la cantidad final al step_size y verificar el min_notional.
     step_size = binance_utils.get_step_size(client, symbol)
-    cantidad_ajustada = binance_utils.ajustar_cantidad(
-        cantidad_teorica, step_size)
-
-    # Asegurarse de que la cantidad ajustada no exceda el saldo disponible
-    # Es crucial no intentar comprar más USDT de los que se tienen disponibles.
-    max_cantidad_posible_por_saldo = saldo_usdt / precio_actual
-    cantidad_final = min(cantidad_ajustada, max_cantidad_posible_por_saldo)
-
-    # Asegurar que la cantidad final sea un múltiplo del step_size
-    cantidad_final = binance_utils.ajustar_cantidad(cantidad_final, step_size)
+    cantidad_ajustada_por_step = binance_utils.ajustar_cantidad(
+        cantidad_final_calculada, step_size)
 
     # Obtener el filtro MIN_NOTIONAL de Binance para el símbolo
     min_notional = 0.0
@@ -150,20 +163,22 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
     for f in info['filters']:
         if f['filterType'] == 'MIN_NOTIONAL':
             min_notional = float(f['minNotional'])
-            break  # Salir del bucle una vez encontrado
+            break
 
-    if (cantidad_final * precio_actual) < min_notional:
+    # Verificación final de la cantidad y el valor nocional
+    if (cantidad_ajustada_por_step * precio_actual) < min_notional:
         logging.warning(
-            f"⚠️ La cantidad calculada para {symbol} ({cantidad_final:.6f} {symbol.replace('USDT', '')}) resulta en un valor inferior al mínimo nocional ({min_notional} USDT).")
+            f"⚠️ La cantidad ajustada para {symbol} ({cantidad_ajustada_por_step:.6f} {symbol.replace('USDT', '')}) resulta en un valor inferior al mínimo nocional ({min_notional} USDT). Retornando 0.")
         return 0.0
 
-    # Asegurarse de que la cantidad final no sea cero o muy cercana a cero
-    if cantidad_final <= 0.00000001:  # Un umbral muy pequeño para evitar cantidades insignificantes
+    if cantidad_ajustada_por_step <= 0.00000001:  # Umbral muy pequeño para evitar cantidades insignificantes
         logging.warning(
-            f"⚠️ La cantidad final calculada para {symbol} ({cantidad_final:.8f}) es insignificante. Retornando 0.")
+            f"⚠️ La cantidad final calculada para {symbol} ({cantidad_ajustada_por_step:.8f}) es insignificante. Retornando 0.")
         return 0.0
 
-    return cantidad_final
+    logging.info(
+        f"✅ Cantidad final a comprar para {symbol}: {cantidad_ajustada_por_step:.8f} (Valor: {cantidad_ajustada_por_step * precio_actual:.2f} USDT)")
+    return cantidad_ajustada_por_step
 
 
 def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje, transacciones_diarias, telegram_bot_token, telegram_chat_id, open_positions_file):
