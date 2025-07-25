@@ -150,15 +150,12 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
         return 0.0
 
     # 1. Calcular el monto máximo en USDT que estamos dispuestos a arriesgar en esta operación.
-    # Este es el monto que se perdería si el stop loss se activa.
     max_usdt_a_riesgar = capital_total * riesgo_por_operacion_porcentaje
     logging.info(
         f"DEBUG: Capital Total: {capital_total:.2f} USDT, Riesgo por Operación: {riesgo_por_operacion_porcentaje*100:.2f}%, Máximo USDT a Arriesgar: {max_usdt_a_riesgar:.2f} USDT")
 
     # 2. Calcular la cantidad de la moneda base que, si cae el % del stop loss,
     # resultaría en la pérdida de 'max_usdt_a_riesgar'.
-    # Formula: Cantidad = (Máximo USDT a Arriesgar) / (Precio actual * Stop Loss Porcentaje)
-    # Esta es la cantidad "ideal" basada en el riesgo.
     if stop_loss_porcentaje <= 0:
         logging.warning(
             "❌ STOP_LOSS_PORCENTAJE es cero o negativo. No se puede calcular la cantidad a comprar.")
@@ -167,15 +164,14 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
     cantidad_por_riesgo = max_usdt_a_riesgar / \
         (precio_actual * stop_loss_porcentaje)
     logging.info(
-        f"DEBUG: Cantidad calculada por riesgo ({riesgo_por_operacion_porcentaje*100:.2f}%): {cantidad_por_riesgo:.8f}")
+        f"DEBUG: Cantidad calculada por riesgo ({(riesgo_por_operacion_porcentaje*100):.2f}%): {cantidad_por_riesgo:.8f}")
 
     # 3. Calcular la cantidad máxima de la moneda base que se puede comprar con el saldo USDT disponible.
-    # Se aplica un pequeño buffer al saldo USDT disponible para cubrir comisiones y asegurar la ejecución.
     BUFFER_PORCENTAJE = 0.0015  # 0.15% de buffer para comisiones y precisión.
-    max_cantidad_por_saldo = (
-        saldo_usdt * (1 - BUFFER_PORCENTAJE)) / precio_actual
+    saldo_usdt_con_buffer = saldo_usdt * (1 - BUFFER_PORCENTAJE)
+    max_cantidad_por_saldo = saldo_usdt_con_buffer / precio_actual
     logging.info(
-        f"DEBUG: Saldo USDT disponible: {saldo_usdt:.2f} USDT, Saldo con buffer ({BUFFER_PORCENTAJE*100:.2f}%): {saldo_usdt * (1 - BUFFER_PORCENTAJE):.2f} USDT")
+        f"DEBUG: Saldo USDT disponible: {saldo_usdt:.2f} USDT, Saldo con buffer ({BUFFER_PORCENTAJE*100:.2f}%): {saldo_usdt_con_buffer:.2f} USDT")
     logging.info(
         f"DEBUG: Máxima cantidad posible por saldo: {max_cantidad_por_saldo:.8f}")
 
@@ -184,12 +180,12 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
     logging.info(
         f"DEBUG: Cantidad raw (mínimo entre riesgo y saldo): {cantidad_raw:.8f}")
 
-    # 5. Ajustar la cantidad final al step_size de Binance.
+    # 5. Ajustar la cantidad final al step_size de Binance y asegurar que no exceda el saldo.
     step_size = binance_utils.get_step_size(client, symbol)
-    cantidad_ajustada_por_step = binance_utils.ajustar_cantidad(
+    cantidad_final_ajustada = binance_utils.ajustar_cantidad(
         cantidad_raw, step_size)
     logging.info(
-        f"DEBUG: Cantidad ajustada por step_size: {cantidad_ajustada_por_step:.8f}")
+        f"DEBUG: Cantidad ajustada por step_size (primera pasada): {cantidad_final_ajustada:.8f}")
 
     # Obtener el filtro MIN_NOTIONAL de Binance para el símbolo.
     min_notional = 0.0
@@ -199,21 +195,26 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
             min_notional = float(f['minNotional'])
             break
 
-    # Verificación final de la cantidad y el valor nocional.
-    if (cantidad_ajustada_por_step * precio_actual) < min_notional:
+    # Bucle para asegurar que la cantidad ajustada no exceda el saldo disponible con buffer.
+    # Si el valor de la orden es mayor que el saldo con buffer, se reduce en un step_size.
+    while (cantidad_final_ajustada * precio_actual) > saldo_usdt_con_buffer and cantidad_final_ajustada > 0:
         logging.warning(
-            f"⚠️ La cantidad ajustada para {symbol} ({cantidad_ajustada_por_step:.6f} {symbol.replace('USDT', '')}) resulta en un valor inferior al mínimo nocional ({min_notional} USDT). Retornando 0.")
-        return 0.0
+            f"⚠️ Valor de orden ({cantidad_final_ajustada * precio_actual:.2f} USDT) excede saldo con buffer ({saldo_usdt_con_buffer:.2f} USDT). Reduciendo cantidad en un step_size.")
+        cantidad_final_ajustada = binance_utils.ajustar_cantidad(
+            cantidad_final_ajustada - step_size, step_size)
+        if cantidad_final_ajustada < 0:  # Evitar cantidades negativas.
+            cantidad_final_ajustada = 0.0
+            break
 
-    # Umbral muy pequeño para evitar cantidades insignificantes.
-    if cantidad_ajustada_por_step <= 0.00000001:
+    # Verificación final de la cantidad y el valor nocional.
+    if cantidad_final_ajustada <= 0 or (cantidad_final_ajustada * precio_actual) < min_notional:
         logging.warning(
-            f"⚠️ La cantidad final calculada para {symbol} ({cantidad_ajustada_por_step:.8f}) es insignificante. Retornando 0.")
+            f"⚠️ La cantidad final ajustada para {symbol} ({cantidad_final_ajustada:.6f} {symbol.replace('USDT', '')}) es insignificante o resulta en un valor inferior al mínimo nocional ({min_notional} USDT). Retornando 0.")
         return 0.0
 
     logging.info(
-        f"✅ Cantidad final a comprar para {symbol}: {cantidad_ajustada_por_step:.8f} (Valor: {cantidad_ajustada_por_step * precio_actual:.2f} USDT)")
-    return cantidad_ajustada_por_step
+        f"✅ Cantidad final a comprar para {symbol}: {cantidad_final_ajustada:.8f} (Valor: {cantidad_final_ajustada * precio_actual:.2f} USDT)")
+    return cantidad_final_ajustada
 
 
 def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje, transacciones_diarias, telegram_bot_token, telegram_chat_id, open_positions_file):
