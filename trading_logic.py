@@ -187,6 +187,11 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
         elif f['filterType'] == 'LOT_SIZE':
             min_qty = float(f['minQty'])
 
+    # *** NUEVO LOGGING PARA DEPURACIÓN ***
+    logging.info(
+        f"DEBUG: Filters for {symbol}: Step Size={step_size}, Min Qty={min_qty}, Min Notional={min_notional}")
+    # ***********************************
+
     # 6. Ajustar la cantidad raw al step_size.
     cantidad_final_ajustada = binance_utils.ajustar_cantidad(
         cantidad_raw, step_size)

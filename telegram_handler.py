@@ -79,6 +79,11 @@ def send_telegram_message(token, chat_id, message):
     except requests.exceptions.RequestException as e:
         # Captura cualquier excepción relacionada con la solicitud (ej. problemas de red, errores HTTP).
         logging.error(f"❌ Error al enviar mensaje a Telegram: {e}")
+        # *** NUEVO LOGGING PARA DEPURACIÓN ***
+        if response and response.status_code == 400:
+            logging.error(
+                f"❌ Detalles del error 400 (Bad Request): Mensaje enviado: '{message}'")
+        # ***********************************
         return False  # Retorna False en caso de error.
 
 
@@ -173,6 +178,11 @@ def get_telegram_updates(offset=None, token=None):
     except requests.exceptions.RequestException as e:
         # Captura errores de solicitud.
         logging.error(f"❌ Error al obtener actualizaciones de Telegram: {e}")
+        # *** NUEVO LOGGING PARA DEPURACIÓN ***
+        if response and response.status_code == 409:
+            logging.error(
+                f"❌ POSIBLE CONFLICTO (Error 409): Otra instancia de tu bot podría estar ejecutándose. Asegúrate de que solo haya una instancia activa. Detalles: {e}")
+        # ***********************************
         return None  # Retorna None en caso de error.
 
 
@@ -321,7 +331,7 @@ def set_telegram_commands_menu(token):
         {"command": "set_sl_fijo",
             "description": "Establece el Stop Loss Fijo (ej. /set_sl_fijo 0.02)"},
         {"command": "set_tsl",
-            "description": "Establece el Trailing Stop Loss (ej. /set_tsl 0.015)"},
+            "description": "Establece el Trailing Stop Loss (ej. 0.015)"},
         {"command": "set_riesgo",
             "description": "Establece el porcentaje de riesgo por operación (ej. 0.01)"},
         {"command": "set_ema_corta_periodo",
