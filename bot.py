@@ -15,7 +15,8 @@ from binance.enums import *
 # Importa datetime para trabajar con fechas y horas, y timedelta para cálculos de tiempo.
 from datetime import datetime, timedelta
 import threading  # Importa el módulo threading para trabajar con hilos.
-import requests  # Importa requests para manejar excepciones de red
+# Importa requests para manejar excepciones de red, como ReadTimeoutError.
+import requests
 
 # Importa los módulos refactorizados que contienen la lógica modularizada del bot.
 # Módulo para gestionar la configuración del bot (cargar/guardar parámetros).
@@ -45,7 +46,7 @@ API_KEY = os.getenv("BINANCE_API_KEY")
 # Clave secreta para autenticación en Binance.
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 
-# Log para depurar la carga de la API Key
+# Log para depurar la carga de la API Key.
 if API_KEY:
     logging.info(
         f"API_KEY cargada (primeros 5 caracteres): {API_KEY[:5]}*****")
@@ -72,7 +73,7 @@ OPEN_POSITIONS_FILE = "open_positions.json"
 # =================== CARGA DE PARÁMETROS DESDE config_manager ===================
 
 # Cargar parámetros al inicio del bot utilizando el nuevo módulo config_manager.
-# Carga la configuración del bot desde 'config.json'.
+# Carga la configuración del bot desde 'config.json' o Firestore.
 bot_params = config_manager.load_parameters()
 
 # Asignar los valores del diccionario cargado a las variables globales del bot.
@@ -92,7 +93,7 @@ STOP_LOSS_PORCENTAJE = bot_params["STOP_LOSS_PORCENTAJE"]
 TRAILING_STOP_PORCENTAJE = bot_params["TRAILING_STOP_PORCENTAJE"]
 # Período para la EMA corta (default 20)
 EMA_CORTA_PERIODO = bot_params.get("EMA_CORTA_PERIODO", 20)
-# NUEVO: Período para la EMA media (default 50)
+# Período para la EMA media (default 50)
 EMA_MEDIA_PERIODO = bot_params.get("EMA_MEDIA_PERIODO", 50)
 # Período para la EMA larga (default 200)
 EMA_LARGA_PERIODO = bot_params.get("EMA_LARGA_PERIODO", 200)
@@ -105,46 +106,52 @@ TOTAL_BENEFICIO_ACUMULADO = bot_params["TOTAL_BENEFICIO_ACUMULADO"]
 # Porcentaje de ganancia para mover el Stop Loss a Breakeven.
 BREAKEVEN_PORCENTAJE = bot_params["BREAKEVEN_PORCENTAJE"]
 
-# Asegurarse de que los nuevos parámetros estén en bot_params si no estaban
+# Asegurarse de que los nuevos parámetros estén en bot_params si no estaban.
+# Esto es importante para que config_manager.save_parameters los persista correctamente.
 bot_params['EMA_CORTA_PERIODO'] = EMA_CORTA_PERIODO
-# Guardar el nuevo parámetro
 bot_params['EMA_MEDIA_PERIODO'] = EMA_MEDIA_PERIODO
 bot_params['EMA_LARGA_PERIODO'] = EMA_LARGA_PERIODO
-# Guardar los parámetros actualizados para asegurar persistencia
+# Guardar los parámetros actualizados para asegurar persistencia.
 config_manager.save_parameters(bot_params)
 
 # =================== INICIALIZACIÓN DE CLIENTES BINANCE Y TELEGRAM ===================
 
 # Inicializa el cliente de la API de Binance.
-# CAMBIO: Aumentar el timeout para las solicitudes de la API de Binance
-# Se pasa un diccionario 'requests_params' con el 'timeout' deseado en segundos.
-client = Client(API_KEY, API_SECRET, testnet=True, requests_params={
-                'timeout': 30})  # Aumentado a 30 segundos
+# Se pasa un diccionario 'requests_params' con el 'timeout' deseado en segundos para evitar errores de tiempo de espera.
+# Aumentado a 30 segundos.
+client = Client(API_KEY, API_SECRET, testnet=True,
+                requests_params={'timeout': 30})
 # Configura la URL de la API para usar la red de prueba (Testnet) de Binance.
 client.API_URL = 'https://testnet.binance.vision/api'
 
-# NUEVO: Filtrar la lista de SYMBOLS para incluir solo los válidos en Binance
+# Filtrar la lista de SYMBOLS para incluir solo los válidos en Binance.
 logging.info("Verificando símbolos de trading válidos en Binance Testnet...")
 try:
+    # Obtiene información de todos los símbolos disponibles en el exchange.
     exchange_info = client.get_exchange_info()
+    # Crea un set de símbolos válidos para búsqueda rápida.
     valid_binance_symbols = {s['symbol'] for s in exchange_info['symbols']}
 
-    filtered_symbols = []
+    filtered_symbols = []  # Lista para almacenar los símbolos que son válidos.
     for symbol in SYMBOLS:
         if symbol in valid_binance_symbols:
+            # Si el símbolo es válido, se añade a la lista filtrada.
             filtered_symbols.append(symbol)
         else:
             logging.warning(
                 f"⚠️ El símbolo {symbol} no es válido en Binance Testnet y será ignorado.")
+    # Actualiza la lista de símbolos a monitorear con los válidos.
     SYMBOLS = filtered_symbols
     logging.info(f"Símbolos de trading activos: {SYMBOLS}")
     if not SYMBOLS:
         logging.error(
             "❌ No hay símbolos de trading válidos configurados. El bot no operará.")
 except requests.exceptions.ReadTimeout as e:
+    # Maneja específicamente los errores de tiempo de espera durante la obtención de información del exchange.
     logging.error(
         f"❌ Error de tiempo de espera al obtener información de intercambio de Binance: {e}. Esto puede deberse a problemas de red o sobrecarga de la API. El bot continuará con la lista de símbolos predefinida, lo que podría causar errores si los símbolos no son válidos.", exc_info=True)
 except Exception as e:
+    # Captura cualquier otra excepción durante la obtención de información del exchange.
     logging.error(
         f"❌ Error al obtener información de intercambio de Binance para filtrar símbolos: {e}", exc_info=True)
     logging.error(
@@ -157,21 +164,21 @@ except Exception as e:
 posiciones_abiertas = position_manager.load_open_positions(
     STOP_LOSS_PORCENTAJE)
 
-# Variables para la gestión de la comunicación con Telegram
+# Variables para la gestión de la comunicación con Telegram.
 # ID del último mensaje procesado de Telegram para evitar duplicados.
 last_update_id = 0
 # Intervalo de tiempo en segundos para verificar nuevos comandos de Telegram.
 TELEGRAM_LISTEN_INTERVAL = 5
 
-# Variables para la gestión de informes diarios
-# Lista para almacenar las transacciones realizadas en el día actual.
+# Variables para la gestión de informes diarios.
+# Lista para almacenar las transacciones realizadas en el día actual (para el informe diario).
 transacciones_diarias = []
 # Almacena la fecha del último informe diario enviado.
 ultima_fecha_informe_enviado = None
 # Marca de tiempo de la última vez que se ejecutó la lógica de trading principal.
 last_trading_check_time = 0
 
-# Objeto Lock para proteger el acceso a variables compartidas entre hilos
+# Objeto Lock para proteger el acceso a variables compartidas entre hilos.
 # Este bloqueo se usará para asegurar que solo un hilo acceda o modifique
 # variables como bot_params, posiciones_abiertas, TOTAL_BENEFICIO_ACUMULADO, transacciones_diarias.
 shared_data_lock = threading.Lock()
@@ -191,9 +198,11 @@ def handle_telegram_commands():
         RSI_UMBRAL_SOBRECOMPRA, INTERVALO, bot_params, TOTAL_BENEFICIO_ACUMULADO, \
         posiciones_abiertas, transacciones_diarias
 
+    # Obtiene las actualizaciones de Telegram, comenzando desde el último ID procesado.
     updates = telegram_handler.get_telegram_updates(
-        TELEGRAM_BOT_TOKEN, last_update_id + 1)
+        last_update_id + 1, TELEGRAM_BOT_TOKEN)
 
+    # Si hay actualizaciones y la respuesta es exitosa.
     if updates and updates['ok']:
         # Itera sobre cada actualización recibida.
         for update in updates['result']:
@@ -232,12 +241,12 @@ def handle_telegram_commands():
                         telegram_handler.remove_keyboard_menu(
                             TELEGRAM_BOT_TOKEN, chat_id)
 
-                    # --- Comandos para establecer parámetros de estrategia (modifican config.json) ---
-                    # Ahora, todas las modificaciones de bot_params están protegidas por el lock.
+                    # --- Comandos para establecer parámetros de estrategia (modifican config.json/Firestore) ---
+                    # Todas las modificaciones de bot_params están protegidas por el lock para evitar condiciones de carrera.
                     elif command == "/set_tp":
                         if len(parts) == 2:
                             new_value = float(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 TAKE_PROFIT_PORCENTAJE = new_value
                                 bot_params['TAKE_PROFIT_PORCENTAJE'] = new_value
                                 # Guarda los parámetros actualizados.
@@ -250,7 +259,7 @@ def handle_telegram_commands():
                     elif command == "/set_sl_fijo":
                         if len(parts) == 2:
                             new_value = float(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 STOP_LOSS_PORCENTAJE = new_value
                                 bot_params['STOP_LOSS_PORCENTAJE'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -262,7 +271,7 @@ def handle_telegram_commands():
                     elif command == "/set_tsl":
                         if len(parts) == 2:
                             new_value = float(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 TRAILING_STOP_PORCENTAJE = new_value
                                 bot_params['TRAILING_STOP_PORCENTAJE'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -274,7 +283,7 @@ def handle_telegram_commands():
                     elif command == "/set_riesgo":
                         if len(parts) == 2:
                             new_value = float(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 RIESGO_POR_OPERACION_PORCENTAJE = new_value
                                 bot_params['RIESGO_POR_OPERACION_PORCENTAJE'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -283,11 +292,10 @@ def handle_telegram_commands():
                         else:
                             telegram_handler.send_telegram_message(
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/set_riesgo &lt;porcentaje_decimal_ej_0.01&gt;</code>")
-                    # CAMBIO: Comando para EMA Corta
                     elif command == "/set_ema_corta_periodo":
                         if len(parts) == 2:
                             new_value = int(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 EMA_CORTA_PERIODO = new_value
                                 bot_params['EMA_CORTA_PERIODO'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -296,11 +304,11 @@ def handle_telegram_commands():
                         else:
                             telegram_handler.send_telegram_message(
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/set_ema_corta_periodo &lt;numero_entero_ej_20&gt;</code>")
-                    # NUEVO COMANDO: Para EMA Media
+                    # Comando para EMA Media.
                     elif command == "/set_ema_media_periodo":
                         if len(parts) == 2:
                             new_value = int(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 EMA_MEDIA_PERIODO = new_value
                                 bot_params['EMA_MEDIA_PERIODO'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -309,11 +317,10 @@ def handle_telegram_commands():
                         else:
                             telegram_handler.send_telegram_message(
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/set_ema_media_periodo &lt;numero_entero_ej_50&gt;</code>")
-                    # NUEVO COMANDO: Para EMA Larga
                     elif command == "/set_ema_larga_periodo":
                         if len(parts) == 2:
                             new_value = int(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 EMA_LARGA_PERIODO = new_value
                                 bot_params['EMA_LARGA_PERIODO'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -325,7 +332,7 @@ def handle_telegram_commands():
                     elif command == "/set_rsi_periodo":
                         if len(parts) == 2:
                             new_value = int(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 RSI_PERIODO = new_value
                                 bot_params['RSI_PERIODO'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -337,7 +344,7 @@ def handle_telegram_commands():
                     elif command == "/set_rsi_umbral":
                         if len(parts) == 2:
                             new_value = int(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 RSI_UMBRAL_SOBRECOMPRA = new_value
                                 bot_params['RSI_UMBRAL_SOBRECOMPRA'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -349,7 +356,7 @@ def handle_telegram_commands():
                     elif command == "/set_intervalo":
                         if len(parts) == 2:
                             new_value = int(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 INTERVALO = new_value
                                 bot_params['INTERVALO'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -361,7 +368,7 @@ def handle_telegram_commands():
                     elif command == "/set_breakeven_porcentaje":
                         if len(parts) == 2:
                             new_value = float(parts[1])
-                            with shared_data_lock:  # Protege el acceso a bot_params
+                            with shared_data_lock:  # Protege el acceso a bot_params.
                                 BREAKEVEN_PORCENTAJE = new_value
                                 bot_params['BREAKEVEN_PORCENTAJE'] = new_value
                                 config_manager.save_parameters(bot_params)
@@ -374,7 +381,7 @@ def handle_telegram_commands():
                     # --- Comandos de información y utilidades ---
                     # Muestra todos los parámetros actuales del bot.
                     elif command == "/get_params":
-                        with shared_data_lock:  # Lee los parámetros con el bloqueo
+                        with shared_data_lock:  # Lee los parámetros con el bloqueo.
                             current_params_msg = "<b>Parámetros Actuales:</b>\n"
                             for key, value in bot_params.items():
                                 if isinstance(value, float) and 'PORCENTAJE' in key.upper():
@@ -387,10 +394,11 @@ def handle_telegram_commands():
                     elif command == "/csv":
                         telegram_handler.send_telegram_message(
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "Generando informe CSV. Esto puede tardar un momento...")
-                        with shared_data_lock:  # Accede a transacciones_diarias con el bloqueo
-                            # Ahora, generar_y_enviar_csv_ahora leerá de Firestore
+                        # Accede a transacciones_diarias con el bloqueo (aunque ahora lee de Firestore).
+                        with shared_data_lock:
+                            # La función generar_y_enviar_csv_ahora leerá directamente de Firestore.
                             reporting_manager.generar_y_enviar_csv_ahora(
-                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)  # No necesita transacciones_diarias
+                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
                     # Muestra el mensaje de ayuda con todos los comandos.
                     elif command == "/help":
                         telegram_handler.send_help_message(
@@ -402,11 +410,12 @@ def handle_telegram_commands():
                         if len(parts) == 2:
                             # Obtiene el símbolo a vender.
                             symbol_to_sell = parts[1].upper()
-                            # Asegurarse de que el símbolo esté en la lista de monitoreo FILTRADA
+                            # Asegurarse de que el símbolo esté en la lista de monitoreo FILTRADA.
                             if symbol_to_sell in SYMBOLS:
-                                with shared_data_lock:  # Protege el acceso a posiciones_abiertas y variables de beneficio
+                                # Protege el acceso a posiciones_abiertas y variables de beneficio.
+                                with shared_data_lock:
                                     trading_logic.vender_por_comando(
-                                        # transacciones_diarias ya no es tan relevante aquí
+                                        # transacciones_diarias ya no es tan relevante aquí.
                                         client, symbol_to_sell, posiciones_abiertas, transacciones_diarias,
                                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE,
                                         TOTAL_BENEFICIO_ACUMULADO, bot_params, config_manager
@@ -421,19 +430,25 @@ def handle_telegram_commands():
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/vender &lt;SIMBOLO_USDT&gt;</code> (ej. /vender BTCUSDT)")
                     # Muestra el beneficio total acumulado.
                     elif command == "/beneficio":
-                        with shared_data_lock:  # Accede a TOTAL_BENEFICIO_ACUMULADO con el bloqueo
+                        with shared_data_lock:  # Accede a TOTAL_BENEFICIO_ACUMULADO con el bloqueo.
                             reporting_manager.send_beneficio_message(
                                 client, TOTAL_BENEFICIO_ACUMULADO, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
                     # Muestra el contenido del archivo de posiciones abiertas (para depuración).
                     elif command == "/get_positions_file":
-                        with shared_data_lock:  # Accede a OPEN_POSITIONS_FILE con el bloqueo
+                        with shared_data_lock:  # Accede a OPEN_POSITIONS_FILE con el bloqueo.
                             telegram_handler.send_positions_file_content(
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE)
-                    elif command == "/reset_beneficio":  # NUEVO: Comando para resetear el beneficio acumulado
+                    # Comando para mostrar resumen de posiciones.
+                    elif command == "/posiciones_actuales":
+                        with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
+                            telegram_handler.send_current_positions_summary(
+                                client, posiciones_abiertas, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                    # Comando para resetear el beneficio acumulado.
+                    elif command == "/reset_beneficio":
                         with shared_data_lock:
                             TOTAL_BENEFICIO_ACUMULADO = 0.0
                             bot_params['TOTAL_BENEFICIO_ACUMULADO'] = 0.0
-                            # Guardar en Firestore/local
+                            # Guardar en Firestore/local.
                             config_manager.save_parameters(bot_params)
                         telegram_handler.send_telegram_message(
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "✅ Beneficio acumulado reseteado a cero.")
@@ -456,7 +471,7 @@ def handle_telegram_commands():
                     telegram_handler.send_telegram_message(
                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error interno al procesar comando: {ex}")
 
-# Función que se ejecutará en el hilo separado para escuchar Telegram
+# Función que se ejecutará en el hilo separado para escuchar Telegram.
 
 
 def telegram_listener(stop_event):
@@ -464,7 +479,7 @@ def telegram_listener(stop_event):
     Función que se ejecuta en un hilo separado para escuchar y procesar comandos de Telegram.
     Utiliza un stop_event para saber cuándo debe detenerse.
     """
-    global last_update_id  # Necesario para mantener el offset de los mensajes de Telegram
+    global last_update_id  # Necesario para mantener el offset de los mensajes de Telegram.
     # El bucle se ejecuta hasta que el evento de parada se activa.
     while not stop_event.is_set():
         try:
@@ -488,7 +503,7 @@ telegram_handler.set_telegram_commands_menu(TELEGRAM_BOT_TOKEN)
 # Mensaje de inicio del bot.
 logging.info("Bot iniciado. Esperando comandos y monitoreando el mercado...")
 
-# Crear y arrancar el hilo de Telegram
+# Crear y arrancar el hilo de Telegram.
 # Crea un evento para señalar al hilo de Telegram que debe detenerse.
 telegram_stop_event = threading.Event()
 # Crea el hilo, pasando la función y el evento.
@@ -510,38 +525,40 @@ try:
             if ultima_fecha_informe_enviado is not None:
                 telegram_handler.send_telegram_message(
                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"Preparando informe del día {ultima_fecha_informe_enviado}...")
-                with shared_data_lock:  # Protege el acceso a transacciones_diarias
-                    # Ahora, enviar_informe_diario leerá de Firestore
+                with shared_data_lock:  # Protege el acceso a transacciones_diarias.
+                    # Ahora, enviar_informe_diario leerá de Firestore.
+                    # No necesita transacciones_diarias.
                     reporting_manager.enviar_informe_diario(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)  # No necesita transacciones_diarias
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
             # Actualiza la fecha del último informe enviado a la fecha actual.
             ultima_fecha_informe_enviado = hoy
-            with shared_data_lock:  # Protege la limpieza de transacciones_diarias
+            with shared_data_lock:  # Protege la limpieza de transacciones_diarias.
                 # Limpia la lista de transacciones diarias para el nuevo día.
                 transacciones_diarias.clear()
 
         # --- PROACTIVE POSITION CLEANUP BASED ON ACTUAL BINANCE BALANCES ---
-        # This ensures the bot's internal state reflects reality before processing.
+        # Esto asegura que el estado interno del bot refleje la realidad antes de procesar.
         symbols_to_remove = []
         with shared_data_lock:
-            # Iterate over a copy to allow modification
+            # Itera sobre una copia para permitir la modificación.
             for symbol, data in list(posiciones_abiertas.items()):
                 base_asset = symbol.replace("USDT", "")
                 actual_balance = binance_utils.obtener_saldo_moneda(
                     client, base_asset)
 
-                # Get symbol info to check min_qty for the pair
+                # Obtiene información del símbolo para verificar min_qty para el par.
                 info = client.get_symbol_info(symbol)
                 min_qty = 0.0
                 for f in info['filters']:
                     if f['filterType'] == 'LOT_SIZE':
                         min_qty = float(f['minQty'])
-                        break  # Found LOT_SIZE filter, no need to check further
+                        # Se encontró el filtro LOT_SIZE, no es necesario seguir buscando.
+                        break
 
-                # Define a small threshold for considering a balance "too small"
-                # Using min_qty for the specific asset is more accurate.
-                # Use Binance's min_qty or a very small number
+                # Define un pequeño umbral para considerar un saldo "demasiado pequeño".
+                # Usar min_qty para el activo específico es más preciso.
+                # Usa el min_qty de Binance o un número muy pequeño.
                 threshold = max(min_qty, 0.00000001)
 
                 if actual_balance < threshold:
@@ -550,14 +567,16 @@ try:
                     symbols_to_remove.append(symbol)
 
             for symbol in symbols_to_remove:
+                # Elimina la posición del diccionario interno del bot.
                 del posiciones_abiertas[symbol]
+                # Guarda los cambios en las posiciones.
                 position_manager.save_open_positions_debounced(
                     posiciones_abiertas)
                 telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                                                        f"🗑️ Posición de <b>{symbol}</b> eliminada del registro del bot debido a saldo insuficiente en Binance.")
                 logging.info(
                     f"Posición de {symbol} eliminada del registro interno debido a saldo real insuficiente.")
-        # --- END PROACTIVE CLEANUP ---
+        # --- FIN DE LA LIMPIEZA PROACTIVA ---
 
         # --- LÓGICA PRINCIPAL DE TRADING ---
         # Ejecuta la lógica de trading solo si ha pasado el INTERVALO de tiempo configurado.
@@ -567,8 +586,8 @@ try:
             # Variable para acumular mensajes de resumen del ciclo.
             general_message = ""
 
-            # Obtener el capital total una vez por ciclo para usarlo en el cálculo de la cantidad a comprar
-            with shared_data_lock:  # Protege el acceso a posiciones_abiertas
+            # Obtener el capital total una vez por ciclo para usarlo en el cálculo de la cantidad a comprar.
+            with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
                 total_capital = binance_utils.get_total_capital_usdt(
                     client, posiciones_abiertas)
 
@@ -576,9 +595,8 @@ try:
                 # Extrae la criptomoneda base (ej. BTC de BTCUSDT).
                 base = symbol.replace("USDT", "")
 
-                # CAMBIO CLAVE: Obtener el saldo USDT más reciente para cada símbolo
-                saldo_usdt = binance_utils.obtener_saldo_moneda(
-                    client, "USDT")  # <--- AHORA SE OBTIENE AQUÍ
+                # Obtener el saldo USDT más reciente para cada símbolo.
+                saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT")
 
                 # Las siguientes llamadas a binance_utils y trading_logic.calcular_ema_rsi
                 # no modifican directamente las variables globales compartidas, solo las leen
@@ -587,7 +605,7 @@ try:
                 precio_actual = binance_utils.obtener_precio_actual(
                     client, symbol)
 
-                # CAMBIO: Llamada a calcular_ema_rsi con tres períodos de EMA
+                # Llamada a calcular_ema_rsi con tres períodos de EMA.
                 ema_corta_valor, ema_media_valor, ema_larga_valor, rsi_valor = trading_logic.calcular_ema_rsi(
                     client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO, EMA_LARGA_PERIODO, RSI_PERIODO
                 )
@@ -598,7 +616,7 @@ try:
                     continue
 
                 # =================== Lógica de Detección de Tendencia ===================
-                trend_emoji = "ǁ"  # Emoji por defecto para lateral
+                trend_emoji = "ǁ"  # Emoji por defecto para lateral.
                 trend_text = "Lateral/Consolidación"
 
                 if ema_corta_valor > ema_media_valor and ema_media_valor > ema_larga_valor:
@@ -617,7 +635,7 @@ try:
                     f"EMA Media ({EMA_MEDIA_PERIODO}m): {ema_media_valor:.2f}\n"
                     f"EMA Larga ({EMA_LARGA_PERIODO}m): {ema_larga_valor:.2f}\n"
                     f"RSI ({RSI_PERIODO}m): {rsi_valor:.2f}\n"
-                    # CAMBIO: Mostrar tendencia con emoji
+                    # Muestra tendencia con emoji y texto.
                     f"Tend: {trend_emoji} <b>{trend_text}</b>"
                 )
 
@@ -630,24 +648,23 @@ try:
                 # 5. RSI por debajo del umbral de sobrecompra (no sobrecomprado).
                 # 6. No hay una posición abierta para este símbolo.
                 # 7. La tendencia detectada es "Alcista".
-                if (saldo_usdt > 10 and  # Mantener un umbral mínimo para evitar micro-compras
+                if (saldo_usdt > 10 and  # Mantener un umbral mínimo para evitar micro-compras.
                     precio_actual > ema_corta_valor and
-                    # NUEVO: Filtro de cruce de EMA corta sobre media
+                    # Filtro de cruce de EMA corta sobre media.
                     ema_corta_valor > ema_media_valor and
-                    # CAMBIO CLAVE: Filtro de tendencia alcista general (EMA media sobre EMA larga)
+                    # Filtro de tendencia alcista general (EMA media sobre EMA larga).
                     ema_media_valor > ema_larga_valor and
                     rsi_valor < RSI_UMBRAL_SOBRECOMPRA and
                     symbol not in posiciones_abiertas and
-                        trend_text == "Alcista"):  # NUEVO: Solo comprar si la tendencia general es alcista
+                        trend_text == "Alcista"):  # Solo comprar si la tendencia general es alcista.
 
                     # Calcula la cantidad a comprar utilizando trading_logic.
-                    # AHORA SE PASA 'total_capital'
                     cantidad = trading_logic.calcular_cantidad_a_comprar(
                         client, saldo_usdt, precio_actual, STOP_LOSS_PORCENTAJE, symbol, RIESGO_POR_OPERACION_PORCENTAJE, total_capital
                     )
 
                     if cantidad > 0:  # Si la cantidad a comprar es válida.
-                        with shared_data_lock:  # Protege el acceso a posiciones_abiertas y transacciones_diarias
+                        with shared_data_lock:  # Protege el acceso a posiciones_abiertas y transacciones_diarias.
                             orden = trading_logic.comprar(
                                 client, symbol, cantidad, posiciones_abiertas, STOP_LOSS_PORCENTAJE,
                                 transacciones_diarias, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE
@@ -661,8 +678,8 @@ try:
                             mensaje_simbolo += f"\n✅ COMPRA ejecutada a {precio_ejecucion:.2f} USDT"
 
                             capital_invertido_usd = precio_ejecucion * cantidad_comprada_real
-                            riesgo_max_trade_usd = total_capital * \
-                                RIESGO_POR_OPERACION_PORCENTAJE  # AHORA USA total_capital
+                            # Usa total_capital.
+                            riesgo_max_trade_usd = total_capital * RIESGO_POR_OPERACION_PORCENTAJE
                             mensaje_simbolo += (
                                 f"\nCantidad comprada: {cantidad_comprada_real:.6f} {base}"
                                 f"\nInversión en este trade: {capital_invertido_usd:.2f} USDT"
@@ -691,9 +708,9 @@ try:
 
                     # Actualiza el precio máximo alcanzado si el precio actual es mayor.
                     if precio_actual > max_precio_alcanzado:
-                        with shared_data_lock:  # Protege la modificación de posiciones_abiertas
+                        with shared_data_lock:  # Protege la modificación de posiciones_abiertas.
                             posiciones_abiertas[symbol]['max_precio_alcanzado'] = precio_actual
-                            # Actualiza la variable local para el resto del ciclo
+                            # Actualiza la variable local para el resto del ciclo.
                             max_precio_alcanzado = precio_actual
                             # Guarda la actualización de la posición.
                             position_manager.save_open_positions_debounced(
@@ -708,7 +725,7 @@ try:
                     if (precio_actual >= breakeven_nivel_real and
                             not posicion['sl_moved_to_breakeven']):
 
-                        with shared_data_lock:  # Protege la modificación de posiciones_abiertas
+                        with shared_data_lock:  # Protege la modificación de posiciones_abiertas.
                             # Mueve el Stop Loss al nivel de Breakeven (o lo mantiene si el fijo es más alto).
                             posiciones_abiertas[symbol]['stop_loss_fijo_nivel_actual'] = max(
                                 stop_loss_fijo_nivel, breakeven_nivel_real)
@@ -718,7 +735,7 @@ try:
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"🔔 SL de <b>{symbol}</b> movido a Breakeven: <b>{breakeven_nivel_real:.2f}</b>")
                         logging.info(
                             f"SL de {symbol} movido a Breakeven: {breakeven_nivel_real:.2f}")
-                        with shared_data_lock:  # Protege la modificación de posiciones_abiertas
+                        with shared_data_lock:  # Protege la modificación de posiciones_abiertas.
                             # Guarda la actualización de la posición.
                             position_manager.save_open_positions_debounced(
                                 posiciones_abiertas)
@@ -778,12 +795,14 @@ try:
                             client, base), binance_utils.get_step_size(client, symbol))
 
                         if cantidad_a_vender_real > 0:  # Si la cantidad a vender es válida.
-                            with shared_data_lock:  # Protege el acceso a posiciones_abiertas, TOTAL_BENEFICIO_ACUMULADO, bot_params y transacciones_diarias
+                            # Protege el acceso a posiciones_abiertas, TOTAL_BENEFICIO_ACUMULADO, bot_params y transacciones_diarias.
+                            with shared_data_lock:
                                 orden = trading_logic.vender(
                                     client, symbol, cantidad_a_vender_real, posiciones_abiertas,
                                     TOTAL_BENEFICIO_ACUMULADO, bot_params, transacciones_diarias,
                                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE, config_manager,
-                                    motivo_venta  # Pasa el motivo_venta a la función vender
+                                    # Pasa el motivo_venta a la función vender.
+                                    motivo_venta
                                 )
                                 # Actualizar TOTAL_BENEFICIO_ACUMULADO después de la venta, ya que trading_logic lo modifica en bot_params.
                                 TOTAL_BENEFICIO_ACUMULADO = bot_params['TOTAL_BENEFICIO_ACUMULADO']
@@ -802,7 +821,7 @@ try:
                             mensaje_simbolo += f"\n⚠️ No hay {base} disponible para vender o cantidad muy pequeña."
 
                 # Añade el resumen de saldos al mensaje del símbolo.
-                with shared_data_lock:  # Protege el acceso a posiciones_abiertas
+                with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
                     mensaje_simbolo += "\n" + \
                         binance_utils.obtener_saldos_formateados(
                             client, posiciones_abiertas)
@@ -833,7 +852,7 @@ except KeyboardInterrupt:
     logging.info("Bot detenido.")
 except Exception as e:  # Captura cualquier excepción general en el bucle principal.
     logging.error(f"Error general en el bot: {e}", exc_info=True)
-    with shared_data_lock:  # Protege el acceso a posiciones_abiertas
+    with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
         telegram_handler.send_telegram_message(
             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error general en el bot: {e}\n\n{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
     print(f"❌ Error general en el bot: {e}")  # Imprime el error en la consola.
