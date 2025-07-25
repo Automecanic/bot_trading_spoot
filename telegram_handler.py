@@ -314,7 +314,7 @@ def set_telegram_commands_menu(token):
         {"command": "set_tsl",
             "description": "Establece el Trailing Stop Loss (ej. /set_tsl 0.015)"},
         {"command": "set_riesgo",
-            "description": "Establece el riesgo por operación (ej. 0.01)"},
+            "description": "Establece el porcentaje de riesgo por operación (ej. 0.01)"},
         {"command": "set_ema_corta_periodo",
             "description": "Establece el período de la EMA corta (ej. 20)"},
         {"command": "set_ema_media_periodo",
@@ -530,13 +530,20 @@ def send_current_positions_summary(client, open_positions, telegram_token, teleg
             valor_actual = cantidad * current_price
             total_value_usdt += valor_actual
 
+            # Escapar todas las partes dinámicas, incluyendo los números formateados
+            escaped_cantidad = _escape_html_entities(f"{cantidad:.6f}")
+            escaped_base_symbol = _escape_html_entities(
+                symbol.replace('USDT', ''))
+            escaped_precio_compra = _escape_html_entities(
+                f"{data['precio_compra']:.4f}")
+            escaped_valor_actual = _escape_html_entities(f"{valor_actual:.2f}")
+
             # Añade los detalles de la posición al mensaje de resumen.
-            # Se escapan las partes dinámicas que no son etiquetas HTML.
             summary_message += (
                 # Cantidad y símbolo base escapado.
-                f" - <b>{cantidad:.6f} {_escape_html_entities(symbol.replace('USDT', ''))}</b> "
+                f" - <b>{escaped_cantidad} {escaped_base_symbol}</b> "
                 # Precio de compra y valor actual.
-                f"a {data['precio_compra']:.4f} USDT (valor actual: <b>{valor_actual:.2f} USDT</b>)\n"
+                f"a {escaped_precio_compra} USDT (valor actual: <b>{escaped_valor_actual} USDT</b>)\n"
             )
         except Exception as e:
             # Captura errores al obtener datos de un símbolo y lo registra.
@@ -545,8 +552,9 @@ def send_current_positions_summary(client, open_positions, telegram_token, teleg
             # Añade un mensaje de error para ese símbolo, escapando el error.
             summary_message += f" - <b>{_escape_html_entities(symbol)}</b>: Error al obtener datos: {_escape_html_entities(e)}.\n"
 
+    escaped_total_value_usdt = _escape_html_entities(f"{total_value_usdt:.2f}")
     # Añade el valor total al final.
-    summary_message += f"\n<b>Valor total de posiciones: {total_value_usdt:.2f} USDT</b>"
+    summary_message += f"\n<b>Valor total de posiciones: {escaped_total_value_usdt} USDT</b>"
 
     # Envía el resumen a Telegram.
     send_telegram_message(telegram_token, telegram_chat_id, summary_message)
