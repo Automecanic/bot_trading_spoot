@@ -6,7 +6,7 @@ import time
 import logging
 # Importa el módulo json para trabajar con datos en formato JSON (guardar/cargar configuraciones).
 import json
-# Importa el módulo csv para trabajar con archivos CSV (generar informes de transacciones).
+# Importa el módulo csv para trabajar con archivos CSV (generar informes).
 import csv
 # Importa la clase Client del SDK de Binance para interactuar con la API.
 from binance.client import Client
@@ -518,6 +518,8 @@ try:
     while True:  # Bucle infinito que mantiene el bot en funcionamiento.
         # Registra el tiempo de inicio de cada ciclo principal.
         start_time_cycle = time.time()
+        logging.debug(
+            f"DEBUG: Inicio del ciclo principal. Hora de inicio: {start_time_cycle}")
 
         # --- Lógica del Informe Diario ---
         hoy = time.strftime("%Y-%m-%d")
@@ -604,15 +606,18 @@ try:
 
             # Obtener el capital total una vez por ciclo para usarlo en el cálculo de la cantidad a comprar.
             with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
-                total_capital = binance_utils.get_total_capital_usdt(
+                saldo_usdt_global = binance_utils.obtener_saldo_moneda(
+                    client, "USDT")
+                total_capital_usdt_global = binance_utils.get_total_capital_usdt(
                     client, posiciones_abiertas)
+                eur_usdt_conversion_rate_global = binance_utils.obtener_precio_eur(
+                    client)
+                total_capital_eur_global = total_capital_usdt_global * \
+                    eur_usdt_conversion_rate_global if eur_usdt_conversion_rate_global else 0
 
             for symbol in SYMBOLS:  # Itera sobre cada símbolo de trading configurado.
                 # Extrae la criptomoneda base (ej. BTC de BTCUSDT).
                 base = symbol.replace("USDT", "")
-
-                # Obtener el saldo USDT más reciente para cada símbolo.
-                saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT")
 
                 # Las siguientes llamadas a binance_utils y trading_logic.calcular_ema_rsi
                 # no modifican directamente las variables globales compartidas, solo las leen
@@ -664,7 +669,7 @@ try:
                 # 5. RSI por debajo del umbral de sobrecompra (no sobrecomprado).
                 # 6. No hay una posición abierta para este símbolo.
                 # 7. La tendencia detectada es "Alcista".
-                if (saldo_usdt > 10 and  # Mantener un umbral mínimo para evitar micro-compras.
+                if (saldo_usdt_global > 10 and  # Mantener un umbral mínimo para evitar micro-compras.
                     precio_actual > ema_corta_valor and
                     # Filtro de cruce de EMA corta sobre media.
                     ema_corta_valor > ema_media_valor and
@@ -676,7 +681,7 @@ try:
 
                     # Calcula la cantidad a comprar utilizando trading_logic.
                     cantidad = trading_logic.calcular_cantidad_a_comprar(
-                        client, saldo_usdt, precio_actual, STOP_LOSS_PORCENTAJE, symbol, RIESGO_POR_OPERACION_PORCENTAJE, total_capital
+                        client, saldo_usdt_global, precio_actual, STOP_LOSS_PORCENTAJE, symbol, RIESGO_POR_OPERACION_PORCENTAJE, total_capital_usdt_global
                     )
 
                     if cantidad > 0:  # Si la cantidad a comprar es válida.
@@ -695,7 +700,7 @@ try:
 
                             capital_invertido_usd = precio_ejecucion * cantidad_comprada_real
                             # Usa total_capital.
-                            riesgo_max_trade_usd = total_capital * RIESGO_POR_OPERACION_PORCENTAJE
+                            riesgo_max_trade_usd = total_capital_usdt_global * RIESGO_POR_OPERACION_PORCENTAJE
                             mensaje_simbolo += (
                                 f"\nCantidad comprada: {cantidad_comprada_real:.6f} {telegram_handler._escape_html_entities(base)}"
                                 f"\nInversión en este trade: {capital_invertido_usd:.2f} USDT"
@@ -837,6 +842,12 @@ try:
                         else:  # Si no hay saldo de la criptomoneda para vender.
                             mensaje_simbolo += f"\n⚠️ No hay {telegram_handler._escape_html_entities(base)} disponible para vender o cantidad muy pequeña."
 
+                # Añade el resumen de saldos global al mensaje del símbolo, como en el ejemplo.
+                mensaje_simbolo += (
+                    f"\n💰 Saldo USDT: {saldo_usdt_global:.2f}\n"
+                    f"💲 Capital Total (USDT): {total_capital_usdt_global:.2f}\n"
+                    f"💶 Capital Total (EUR): {total_capital_eur_global:.2f}"
+                )
                 # Acumula el mensaje del símbolo al mensaje general.
                 general_message += mensaje_simbolo + "\n\n"
 
@@ -854,8 +865,12 @@ try:
         # --- GESTIÓN DEL TIEMPO ENTRE CICLOS ---
         # Calcula el tiempo transcurrido en el ciclo actual.
         time_elapsed_overall = time.time() - start_time_cycle
-        # El hilo principal ahora solo se detiene por el INTERVALO de trading, el hilo de Telegram es independiente.
+        logging.debug(
+            f"DEBUG: Tiempo transcurrido en el ciclo: {time_elapsed_overall:.2f} segundos.")
+        logging.debug(f"DEBUG: INTERVALO configurado: {INTERVALO} segundos.")
         sleep_duration = max(0, INTERVALO - time_elapsed_overall)
+        logging.debug(
+            f"DEBUG: Duración del sleep calculada: {sleep_duration:.2f} segundos.")
         print(
             f"⏳ Próxima revisión en {sleep_duration:.0f} segundos (Ciclo de trading)...\n")
         # Pausa el bot por el tiempo restante para mantener el intervalo.
