@@ -154,62 +154,62 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
     logging.info(
         f"DEBUG: Capital Total: {capital_total:.2f} USDT, Riesgo por Operación: {riesgo_por_operacion_porcentaje*100:.2f}%, Máximo USDT a Arriesgar: {max_usdt_a_riesgar:.2f} USDT")
 
-    # 2. Calcular la cantidad de la moneda base que, si cae el % del stop loss,
-    # resultaría en la pérdida de 'max_usdt_a_riesgar'.
-    if stop_loss_porcentaje <= 0:
-        logging.warning(
-            "❌ STOP_LOSS_PORCENTAJE es cero o negativo. No se puede calcular la cantidad a comprar.")
-        return 0.0
-
-    cantidad_por_riesgo = max_usdt_a_riesgar / \
-        (precio_actual * stop_loss_porcentaje)
-    logging.info(
-        f"DEBUG: Cantidad calculada por riesgo ({(riesgo_por_operacion_porcentaje*100):.2f}%): {cantidad_por_riesgo:.8f}")
-
-    # 3. Calcular la cantidad máxima de la moneda base que se puede comprar con el saldo USDT disponible.
+    # 2. Calcular el saldo USDT disponible con un buffer para comisiones.
     BUFFER_PORCENTAJE = 0.0015  # 0.15% de buffer para comisiones y precisión.
     saldo_usdt_con_buffer = saldo_usdt * (1 - BUFFER_PORCENTAJE)
-    max_cantidad_por_saldo = saldo_usdt_con_buffer / precio_actual
     logging.info(
         f"DEBUG: Saldo USDT disponible: {saldo_usdt:.2f} USDT, Saldo con buffer ({BUFFER_PORCENTAJE*100:.2f}%): {saldo_usdt_con_buffer:.2f} USDT")
-    logging.info(
-        f"DEBUG: Máxima cantidad posible por saldo: {max_cantidad_por_saldo:.8f}")
 
-    # 4. Tomar el mínimo de las dos cantidades calculadas.
-    cantidad_raw = min(cantidad_por_riesgo, max_cantidad_por_saldo)
+    # 3. Determinar el presupuesto efectivo para la compra.
+    # Es el mínimo entre el riesgo permitido y el saldo disponible con buffer.
+    effective_budget_usdt = min(max_usdt_a_riesgar, saldo_usdt_con_buffer)
     logging.info(
-        f"DEBUG: Cantidad raw (mínimo entre riesgo y saldo): {cantidad_raw:.8f}")
+        f"DEBUG: Presupuesto efectivo para la compra: {effective_budget_usdt:.2f} USDT")
 
-    # 5. Ajustar la cantidad final al step_size de Binance y asegurar que no exceda el saldo.
+    if effective_budget_usdt <= 0:
+        logging.warning(
+            "⚠️ Presupuesto efectivo para la compra es cero o negativo. No se puede comprar.")
+        return 0.0
+
+    # 4. Calcular la cantidad raw basada en el presupuesto efectivo.
+    cantidad_raw = effective_budget_usdt / precio_actual
+    logging.info(
+        f"DEBUG: Cantidad raw basada en presupuesto efectivo: {cantidad_raw:.8f}")
+
+    # 5. Obtener los filtros de Binance.
     step_size = binance_utils.get_step_size(client, symbol)
+    info = client.get_symbol_info(symbol)
+    min_notional = 0.0
+    min_qty = 0.0
+    for f in info['filters']:
+        if f['filterType'] == 'MIN_NOTIONAL':
+            min_notional = float(f['minNotional'])
+        elif f['filterType'] == 'LOT_SIZE':
+            min_qty = float(f['minQty'])
+
+    # 6. Ajustar la cantidad raw al step_size.
     cantidad_final_ajustada = binance_utils.ajustar_cantidad(
         cantidad_raw, step_size)
     logging.info(
         f"DEBUG: Cantidad ajustada por step_size (primera pasada): {cantidad_final_ajustada:.8f}")
 
-    # Obtener el filtro MIN_NOTIONAL de Binance para el símbolo.
-    min_notional = 0.0
-    info = client.get_symbol_info(symbol)
-    for f in info['filters']:
-        if f['filterType'] == 'MIN_NOTIONAL':
-            min_notional = float(f['minNotional'])
-            break
-
-    # Bucle para asegurar que la cantidad ajustada no exceda el saldo disponible con buffer.
-    # Si el valor de la orden es mayor que el saldo con buffer, se reduce en un step_size.
-    while (cantidad_final_ajustada * precio_actual) > saldo_usdt_con_buffer and cantidad_final_ajustada > 0:
+    # 7. Bucle para asegurar que el valor de la orden no exceda el saldo disponible.
+    # Reducimos la cantidad en un step_size si el valor total de la orden excede el saldo con buffer.
+    # También nos aseguramos de que la cantidad no caiga por debajo de min_qty o min_notional.
+    while (cantidad_final_ajustada * precio_actual) > saldo_usdt_con_buffer and cantidad_final_ajustada > min_qty:
         logging.warning(
             f"⚠️ Valor de orden ({cantidad_final_ajustada * precio_actual:.2f} USDT) excede saldo con buffer ({saldo_usdt_con_buffer:.2f} USDT). Reduciendo cantidad en un step_size.")
         cantidad_final_ajustada = binance_utils.ajustar_cantidad(
             cantidad_final_ajustada - step_size, step_size)
-        if cantidad_final_ajustada < 0:  # Evitar cantidades negativas.
-            cantidad_final_ajustada = 0.0
-            break
+        if cantidad_final_ajustada < min_qty or (cantidad_final_ajustada * precio_actual) < min_notional:
+            logging.warning(
+                f"⚠️ Reducción de cantidad para {symbol} resultó en un valor por debajo de min_qty o min_notional. Abortando compra.")
+            return 0.0
 
-    # Verificación final de la cantidad y el valor nocional.
-    if cantidad_final_ajustada <= 0 or (cantidad_final_ajustada * precio_actual) < min_notional:
+    # Verificación final después de los ajustes.
+    if cantidad_final_ajustada <= 0 or cantidad_final_ajustada < min_qty or (cantidad_final_ajustada * precio_actual) < min_notional:
         logging.warning(
-            f"⚠️ La cantidad final ajustada para {symbol} ({cantidad_final_ajustada:.6f} {symbol.replace('USDT', '')}) es insignificante o resulta en un valor inferior al mínimo nocional ({min_notional} USDT). Retornando 0.")
+            f"⚠️ La cantidad final ajustada para {symbol} ({cantidad_final_ajustada:.6f} {symbol.replace('USDT', '')}) es insignificante o resulta en un valor inferior al mínimo nocional ({min_notional} USDT) o min_qty ({min_qty}). Retornando 0.")
         return 0.0
 
     logging.info(
