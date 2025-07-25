@@ -9,6 +9,7 @@ import os
 # Importa el módulo csv para trabajar con archivos CSV (generación de informes).
 import csv
 import html  # Importa el módulo html para escapar caracteres HTML.
+import math  # Importa el módulo math para funciones como isnan e isinf.
 
 # Configura el sistema de registro básico para este módulo.
 # Esto asegura que los mensajes informativos, advertencias y errores se muestren en la consola del bot.
@@ -22,6 +23,7 @@ def _escape_html_entities(text):
     Esto es crucial para asegurar que el texto dinámico no rompa el formato HTML
     cuando se usa parse_mode='HTML' en Telegram.
     Por ejemplo, '<' se convierte en '&lt;', '>' en '&gt;', '&' en '&amp;', etc.
+    También maneja valores None o flotantes no finitos (NaN, Inf) para evitar errores HTML.
 
     Args:
         text (str): La cadena de texto a escapar.
@@ -29,7 +31,14 @@ def _escape_html_entities(text):
     Returns:
         str: La cadena de texto con los caracteres HTML escapados.
     """
-    return html.escape(str(text))  # Asegura que el input sea string antes de escapar.
+    if text is None:
+        return "N/A"
+    # Convertir a float para comprobar NaN/Inf, pero solo si es numérico.
+    if isinstance(text, (int, float)):
+        if math.isnan(text) or math.isinf(text):
+            return "N/A"
+    # Asegura que el input sea string antes de escapar.
+    return html.escape(str(text))
 
 
 def send_telegram_message(token, chat_id, message):
@@ -531,12 +540,19 @@ def send_current_positions_summary(client, open_positions, telegram_token, teleg
             total_value_usdt += valor_actual
 
             # Escapar todas las partes dinámicas, incluyendo los números formateados
-            escaped_cantidad = _escape_html_entities(f"{cantidad:.6f}")
+            # Asegurarse de que los valores sean numéricos antes de formatear
+            cantidad_str = f"{cantidad:.6f}" if isinstance(
+                cantidad, (int, float)) else "N/A"
+            precio_compra_str = f"{data['precio_compra']:.4f}" if isinstance(
+                data.get('precio_compra'), (int, float)) else "N/A"
+            valor_actual_str = f"{valor_actual:.2f}" if isinstance(
+                valor_actual, (int, float)) else "N/A"
+
+            escaped_cantidad = _escape_html_entities(cantidad_str)
             escaped_base_symbol = _escape_html_entities(
                 symbol.replace('USDT', ''))
-            escaped_precio_compra = _escape_html_entities(
-                f"{data['precio_compra']:.4f}")
-            escaped_valor_actual = _escape_html_entities(f"{valor_actual:.2f}")
+            escaped_precio_compra = _escape_html_entities(precio_compra_str)
+            escaped_valor_actual = _escape_html_entities(valor_actual_str)
 
             # Añade los detalles de la posición al mensaje de resumen.
             summary_message += (
