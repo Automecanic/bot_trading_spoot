@@ -1,206 +1,242 @@
-import logging
-from binance.client import Client
+import logging  # Importa el módulo logging para registrar eventos y mensajes.
+# Importa la excepción específica de Binance API.
+from binance.exceptions import BinanceAPIException
+# Importa el módulo math para funciones matemáticas como floor y log10.
+import math
 
-# Configura el sistema de registro para este módulo.
+# Configura el sistema de registro básico para este módulo.
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def obtener_saldo_moneda(client, asset):
     """
-    Obtiene el saldo disponible (free balance) de una moneda específica de tu cuenta de Binance.
-    'free' balance es la cantidad que no está bloqueada en órdenes abiertas.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Obtiene el saldo disponible (free) de un activo específico en la cuenta de Binance.
+
+    Args:
+        client: Instancia del cliente de Binance.
+        asset (str): El símbolo del activo (ej. "USDT", "BTC").
+
+    Returns:
+        float: El saldo disponible del activo. Retorna 0.0 si hay un error o el activo no se encuentra.
     """
     try:
-        balance = client.get_asset_balance(asset=asset)
-        return float(balance['free'])
+        # Obtiene la información de la cuenta.
+        account_info = client.get_account()
+        # Itera sobre los balances para encontrar el activo deseado.
+        for balance in account_info['balances']:
+            if balance['asset'] == asset:
+                # Retorna el saldo 'free' (disponible para trading).
+                return float(balance['free'])
+        # Si el activo no se encuentra, retorna 0.0.
+        logging.warning(
+            f"⚠️ Activo {asset} no encontrado en los balances de la cuenta.")
+        return 0.0
+    except BinanceAPIException as e:
+        # Captura errores específicos de la API de Binance.
+        logging.error(
+            f"❌ Error de Binance API al obtener saldo de {asset}: {e}", exc_info=True)
+        return 0.0
     except Exception as e:
-        logging.error(f"❌ Error al obtener saldo de {asset}: {e}")
+        # Captura cualquier otro error inesperado.
+        logging.error(
+            f"❌ Error al obtener saldo de {asset}: {e}", exc_info=True)
         return 0.0
 
 
 def obtener_precio_actual(client, symbol):
     """
-    Obtiene el precio de mercado actual de un par de trading (símbolo) de Binance.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Obtiene el precio de mercado actual de un par de trading.
+
+    Args:
+        client: Instancia del cliente de Binance.
+        symbol (str): El par de trading (ej. "BTCUSDT").
+
+    Returns:
+        float: El precio actual del símbolo. Retorna 0.0 si hay un error.
     """
     try:
+        # Obtiene la información del ticker (precio actual).
         ticker = client.get_symbol_ticker(symbol=symbol)
-        return float(ticker['price'])
-    except Exception as e:
-        logging.error(f"❌ Error al obtener precio de {symbol}: {e}")
+        return float(ticker['price'])  # Retorna el precio.
+    except BinanceAPIException as e:
+        # Captura errores específicos de la API de Binance.
+        logging.error(
+            f"❌ Error de Binance API al obtener precio de {symbol}: {e}", exc_info=True)
         return 0.0
-
-
-def obtener_precio_eur(client):
-    """
-    Obtiene el tipo de cambio actual de USDT a EUR desde Binance (usando el par EURUSDT).
-    Útil para mostrar el capital total en euros en los informes.
-    Requiere el objeto 'client' de Binance para interactuar con la API.
-    """
-    try:
-        eur_usdt_price = client.get_avg_price(symbol='EURUSDT')
-        return 1 / float(eur_usdt_price['price'])
     except Exception as e:
-        logging.warning(
-            f"⚠️ No se pudo obtener el precio de EURUSDT: {e}. Usando 0 para la conversión a EUR.")
+        # Captura cualquier otro error inesperado.
+        logging.error(
+            f"❌ Error al obtener precio de {symbol}: {e}", exc_info=True)
         return 0.0
 
 
 def get_step_size(client, symbol):
     """
-    Obtiene el 'stepSize' para un símbolo de Binance.
-    El 'stepSize' es el incremento mínimo permitido para la cantidad de una orden (ej. 0.001 BTC).
-    Es crucial para ajustar las cantidades de compra/venta y evitar errores de precisión de la API (-1111).
-    Requiere el objeto 'client' de Binance para interactuar con la API.
+    Obtiene el 'stepSize' para un símbolo dado, que define la granularidad de la cantidad
+    en las órdenes de Binance.
+
+    Args:
+        client: Instancia del cliente de Binance.
+        symbol (str): El par de trading (ej. "BTCUSDT").
+
+    Returns:
+        float: El stepSize para el símbolo. Retorna 0.0 si no se encuentra o hay un error.
     """
     try:
+        # Obtiene la información de intercambio para el símbolo.
         info = client.get_symbol_info(symbol)
-        for f in info['filters']:
-            if f['filterType'] == 'LOT_SIZE':
-                return float(f['stepSize'])
+        if info:
+            # Itera sobre los filtros para encontrar el filtro 'LOT_SIZE'.
+            for f in info['filters']:
+                if f['filterType'] == 'LOT_SIZE':
+                    return float(f['stepSize'])  # Retorna el stepSize.
         logging.warning(
-            f"⚠️ No se encontró LOT_SIZE filter para {symbol}. Usando stepSize por defecto: 0.000001")
-        return 0.000001
+            f"⚠️ No se encontró el filtro LOT_SIZE para el símbolo {symbol}.")
+        return 0.0
+    except BinanceAPIException as e:
+        # Captura errores específicos de la API de Binance.
+        logging.error(
+            f"❌ Error de Binance API al obtener stepSize para {symbol}: {e}", exc_info=True)
+        return 0.0
     except Exception as e:
-        logging.error(f"❌ Error al obtener stepSize para {symbol}: {e}")
-        return 0.000001
+        # Captura cualquier otro error inesperado.
+        logging.error(
+            f"❌ Error al obtener stepSize para {symbol}: {e}", exc_info=True)
+        return 0.0
 
 
 def ajustar_cantidad(cantidad, step_size):
     """
-    Ajusta una cantidad dada para que sea un múltiplo exacto del 'step_size' de Binance
-    y con la precisión correcta en decimales. Esto es vital para evitar el error -1111 de Binance.
+    Ajusta una cantidad dada al 'stepSize' requerido por Binance.
+    Por ejemplo, si stepSize es 0.001, una cantidad de 0.00123 se ajustaría a 0.001.
+    Si stepSize es 1.0, una cantidad de 1.23 se ajustaría a 1.0.
+
+    Args:
+        cantidad (float): La cantidad deseada de criptomoneda.
+        step_size (float): El stepSize obtenido de la información del símbolo de Binance.
+
+    Returns:
+        float: La cantidad ajustada. Retorna 0.0 si step_size es 0.
     """
-    if step_size == 0:
-        logging.warning("⚠️ step_size es 0, no se puede ajustar la cantidad.")
+    if step_size <= 0:
+        logging.warning(
+            "⚠️ step_size es cero o negativo. No se puede ajustar la cantidad.")
         return 0.0
 
-    s_step_size = str(step_size)
-    if '.' in s_step_size:
-        decimal_places = len(s_step_size.split('.')[1].rstrip('0'))
-    else:
-        decimal_places = 0
+    # Calcula el número de decimales del step_size.
+    # Ej: step_size = 0.001 -> decimal_places = 3
+    # Ej: step_size = 1.0   -> decimal_places = 0
+    # Ej: step_size = 0.000001 -> decimal_places = 6
+    decimal_places = int(round(-math.log10(step_size))) if step_size < 1 else 0
 
+    # Divide la cantidad por el step_size, redondea al entero más cercano y multiplica por step_size.
+    # Esto asegura que la cantidad sea un múltiplo exacto del step_size.
+    # Por ejemplo, si cantidad = 0.00123 y step_size = 0.001:
+    # 0.00123 / 0.001 = 1.23
+    # round(1.23) = 1
+    # 1 * 0.001 = 0.001
+
+    # Si cantidad = 0.0018 y step_size = 0.001:
+    # 0.0018 / 0.001 = 1.8
+    # round(1.8) = 2
+    # 2 * 0.001 = 0.002 (Esto podría ser un problema si queremos truncar en lugar de redondear)
+
+    # Para asegurar que siempre truncamos hacia abajo (no compramos más de lo que podemos o queremos)
+    # y para manejar la precisión de flotantes, es mejor usar la siguiente lógica:
+
+    # Calcula el número de "pasos" que caben en la cantidad.
+    num_steps = math.floor(cantidad / step_size)
+
+    # La cantidad ajustada es el número de pasos multiplicado por el step_size.
+    adjusted_cantidad = num_steps * step_size
+
+    # Redondea la cantidad ajustada a la cantidad correcta de decimales para evitar problemas de flotantes.
+    # Esto es crucial para que Binance acepte la orden.
+    adjusted_cantidad = round(adjusted_cantidad, decimal_places)
+
+    logging.info(
+        f"DEBUG: Ajustando cantidad {cantidad} con step_size {step_size} (decimales: {decimal_places}). Cantidad ajustada: {adjusted_cantidad}")
+
+    return adjusted_cantidad
+
+
+def obtener_precio_eur(client):
+    """
+    Obtiene la tasa de conversión actual de USDT a EUR (EURUSDT).
+
+    Args:
+        client: Instancia del cliente de Binance.
+
+    Returns:
+        float: La tasa de conversión EURUSDT. Retorna 0.0 si hay un error.
+    """
     try:
-        factor = 10**decimal_places
-        ajustada = (round(cantidad * factor / (step_size * factor))
-                    * (step_size * factor)) / factor
-
-        formatted_quantity_str = f"{ajustada:.{decimal_places}f}"
-        return float(formatted_quantity_str)
-    except Exception as e:
+        # Obtiene el precio del par EURUSDT.
+        eur_usdt_ticker = client.get_symbol_ticker(symbol="EURUSDT")
+        return float(eur_usdt_ticker['price'])
+    except BinanceAPIException as e:
+        # Captura errores específicos de la API de Binance.
         logging.error(
-            f"❌ Error al ajustar cantidad {cantidad} con step {step_size}: {e}")
+            f"❌ Error de Binance API al obtener precio EURUSDT: {e}", exc_info=True)
+        return 0.0
+    except Exception as e:
+        # Captura cualquier otro error inesperado.
+        logging.error(f"❌ Error al obtener precio EURUSDT: {e}", exc_info=True)
         return 0.0
 
 
-def get_total_capital_usdt(client, posiciones_abiertas):
+def obtener_saldos_formateados(client, open_positions):
     """
-    Calcula y devuelve el capital total de la cuenta en USDT.
-    Incluye el USDT disponible y el valor actual de todas las posiciones abiertas.
+    Obtiene y formatea los saldos de USDT y de los activos en posiciones abiertas.
+
+    Args:
+        client: Instancia del cliente de Binance.
+        open_positions (dict): Diccionario de posiciones abiertas del bot.
+
+    Returns:
+        str: Una cadena formateada con los saldos.
     """
-    try:
-        saldo_usdt = obtener_saldo_moneda(client, "USDT")
-        capital_total_usdt = saldo_usdt
+    # Obtener el saldo de USDT.
+    saldo_usdt = obtener_saldo_moneda(client, "USDT")
 
-        for symbol, pos in posiciones_abiertas.items():
-            precio_actual = obtener_precio_actual(client, symbol)
-            capital_total_usdt += pos['cantidad_base'] * precio_actual
+    # Construir el mensaje de saldos.
+    saldos_msg = f"💰 Saldos:\n"
+    saldos_msg += f" - USDT: {saldo_usdt:.2f}\n"
 
-        return capital_total_usdt
-    except Exception as e:
-        logging.error(f"❌ Error al calcular el capital total en USDT: {e}")
-        return 0.0
+    # Obtener saldos de los activos en posiciones abiertas.
+    for symbol in open_positions.keys():
+        base_asset = symbol.replace("USDT", "")
+        saldo_base = obtener_saldo_moneda(client, base_asset)
+        # Formatear a 6 decimales para mayor precisión.
+        saldos_msg += f" - {base_asset}: {saldo_base:.6f}\n"
+
+    return saldos_msg
 
 
-def obtener_saldos_formateados(client, posiciones_abiertas):
+def get_total_capital_usdt(client, open_positions):
     """
-    Formatea un mensaje con los saldos de USDT disponibles y el capital total estimado (en USDT y EUR).
-    El capital total incluye el USDT disponible y el valor actual de todas las posiciones abiertas.
-    Requiere el objeto 'client' de Binance y el diccionario 'posiciones_abiertas'.
+    Calcula el capital total en USDT, sumando el saldo de USDT disponible
+    y el valor actual de todas las posiciones abiertas.
+
+    Args:
+        client: Instancia del cliente de Binance.
+        open_positions (dict): Diccionario de posiciones abiertas del bot.
+
+    Returns:
+        float: El capital total estimado en USDT.
     """
-    try:
-        saldo_usdt = obtener_saldo_moneda(client, "USDT")
-        capital_total_usdt = get_total_capital_usdt(
-            client, posiciones_abiertas)  # Usa la nueva función
+    total_capital = obtener_saldo_moneda(
+        client, "USDT")  # Inicia con el saldo de USDT.
 
-        eur_usdt_rate = obtener_precio_eur(client)
-        capital_total_eur = capital_total_usdt * eur_usdt_rate if eur_usdt_rate else 0
-
-        return (f"💰 Saldo USDT: {saldo_usdt:.2f}\n"
-                f"💲 Capital Total (USDT): {capital_total_usdt:.2f}\n"
-                f"💶 Capital Total (EUR): {capital_total_eur:.2f}")
-    except Exception as e:
-        logging.error(f"❌ Error al obtener saldos formateados: {e}")
-        return "❌ Error al obtener saldos."
-
-
-def convert_dust_to_bnb(client):
-    """
-    Intenta convertir pequeños saldos de criptomonedas ("dust") a BNB.
-    Utiliza la API de Binance para realizar la conversión.
-    Requiere el objeto 'client' de Binance.
-    """
-    try:
-        dust_assets = []
-        account_info = client.get_account()
-        balances = account_info['balances']
-
-        # No necesitamos obtener todos los símbolos de trading válidos aquí,
-        # ya que client.transfer_dust() manejará los activos no elegibles.
-
-        for balance in balances:
-            asset = balance['asset']
-            free = float(balance['free'])
-
-            # Considerar cualquier activo que no sea USDT o BNB y tenga un saldo libre positivo.
-            # Dejaremos que la API de Binance determine si es "dust" elegible.
-            if asset not in ["USDT", "BNB"] and free > 0:
-                dust_assets.append(asset)
-                logging.debug(
-                    f"Añadiendo {free:.8f} {asset} a la lista de posibles activos para convertir a dust.")
-
-        if not dust_assets:
-            logging.info(
-                "No se encontraron activos con saldo positivo (excluyendo USDT/BNB) para intentar convertir a BNB (dust).")
-            return {"status": "success", "message": "No se encontraron activos con saldo positivo (excluyendo USDT/BNB) para intentar convertir a BNB (dust)."}
-
-        logging.info(
-            f"Intentando convertir los siguientes activos a BNB: {', '.join(dust_assets)}")
-
-        # Realizar la transferencia de dust. Binance API ignorará los activos no elegibles.
-        result = client.transfer_dust(asset=dust_assets)
-
-        if result and 'totalServiceCharge' in result and result['totalServiceCharge'] is not None:
-            total_transfered = float(result['totalTransfered'])
-            total_service_charge = float(result['totalServiceCharge'])
-
-            converted_assets_info = [
-                f"{float(item['amount']) if 'amount' in item else 'N/A'} {item['asset']}"
-                for item in result.get('transferResult', []) if 'amount' in item and float(item['amount']) > 0
-            ]
-
-            if converted_assets_info:
-                message = (f"✅ Conversión de dust a BNB exitosa!\n"
-                           f"Total convertido a BNB: {total_transfered:.8f}\n"
-                           f"Comisión total: {total_service_charge:.8f} BNB\n"
-                           f"Activos convertidos: {', '.join(converted_assets_info)}")
-                logging.info(message)
-                return {"status": "success", "message": message, "result": result}
-            else:
-                message = f"⚠️ Se intentó la conversión de dust, pero ningún activo fue elegible por Binance. Respuesta de la API: {result}"
-                logging.warning(message)
-                return {"status": "failed", "message": message, "result": result}
-        else:
-            message = f"⚠️ No se pudo convertir dust a BNB. Respuesta inesperada de la API: {result}"
-            logging.warning(message)
-            return {"status": "failed", "message": message, "result": result}
-
-    except Exception as e:
-        # Si ocurre cualquier excepción durante la conversión de dust, se registra el error con el traceback completo.
-        logging.error(
-            f"❌ Error al intentar convertir dust a BNB: {e}", exc_info=True)
-        # Devuelve un diccionario indicando el error y el mensaje correspondiente.
-        return {"status": "error", "message": f"❌ Error al intentar convertir dust a BNB: {e}"}
+    # Suma el valor actual de cada posición abierta.
+    for symbol, data in open_positions.items():
+        try:
+            current_price = obtener_precio_actual(client, symbol)
+            if current_price > 0:
+                total_capital += data['cantidad_base'] * current_price
+        except Exception as e:
+            logging.warning(
+                f"⚠️ No se pudo calcular el valor de la posición para {symbol}: {e}. Se ignorará en el cálculo del capital total.", exc_info=True)
+            continue
+    return total_capital
