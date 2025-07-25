@@ -10,6 +10,8 @@ import os
 import csv
 import html  # Importa el módulo html para escapar caracteres HTML.
 import math  # Importa el módulo math para funciones como isnan e isinf.
+# Mover la importación aquí para que sea accesible globalmente en el módulo.
+import binance_utils
 
 # Configura el sistema de registro básico para este módulo.
 # Esto asegura que los mensajes informativos, advertencias y errores se muestren en la consola del bot.
@@ -329,7 +331,6 @@ def set_telegram_commands_menu(token):
     url = f"https://api.telegram.org/bot{token}/setMyCommands"
 
     # Define la lista de comandos y sus descripciones.
-    # Se corrigió la sintaxis de esta lista.
     commands = [
         {"command": "start", "description": "Iniciar el bot y mostrar menú"},
         {"command": "menu", "description": "Mostrar el menú de comandos"},
@@ -522,41 +523,49 @@ def send_help_message(token, chat_id):
 def send_current_positions_summary(client, open_positions, token, chat_id):
     """
     Envía un resumen de las posiciones abiertas actuales del bot a Telegram.
-    Incluye el precio de entrada, el precio actual y la ganancia/pérdida no realizada.
-
-    Args:
-        client: Cliente de la API de Binance.
-        open_positions (dict): Diccionario de posiciones abiertas.
-        token (str): Token del bot de Telegram.
-        chat_id (str): ID del chat de Telegram.
+    Muestra la cantidad, el símbolo, el precio de entrada y el precio actual.
     """
+    # binance_utils ya está importado al inicio del archivo.
+
     if not open_positions:
         send_telegram_message(
-            token, chat_id, "🚫 No hay posiciones abiertas actualmente.")
+            token, chat_id, "🚫 No tienes posiciones abiertas en este momento.")
         return
 
-    summary_message = "📊 <b>Resumen de Posiciones Abiertas:</b>\n\n"
-    total_unrealized_pnl_usdt = 0.0
+    # Inicializar el mensaje vacío para construirlo por cada posición.
+    summary_message = ""
 
-    for symbol, data in open_positions.items():
-        precio_compra = data['precio_compra']
-        cantidad_base = data['cantidad_base']
+    # Log the number of positions being processed for debugging
+    logging.info(
+        f"DEBUG: send_current_positions_summary está procesando {len(open_positions)} posiciones.")
 
-        precio_actual = binance_utils.obtener_precio_actual(client, symbol)
-        if precio_actual is None:
-            summary_message += f"⚠️ No se pudo obtener el precio actual para <b>{_escape_html_entities(symbol)}</b>. Saltando.\n"
-            continue
+    # Iterate over a sorted list of symbols for consistent output
+    sorted_symbols = sorted(open_positions.keys())
 
-        unrealized_pnl = (precio_actual - precio_compra) * cantidad_base
-        total_unrealized_pnl_usdt += unrealized_pnl
+    for symbol in sorted_symbols:
+        data = open_positions[symbol]  # Get data for the current symbol
+        try:
+            current_price = binance_utils.obtener_precio_actual(client, symbol)
+            if current_price is None:
+                logging.warning(
+                    f"⚠️ No se pudo obtener el precio actual para {symbol}. Saltando este símbolo en el resumen.")
+                continue  # Skip this symbol if price can't be fetched
 
-        summary_message += (
-            f"<b>{_escape_html_entities(symbol)}</b>:\n"
-            f"  Entrada: {precio_compra:.4f} USDT\n"
-            f"  Actual: {precio_actual:.4f} USDT\n"
-            f"  Cantidad: {cantidad_base:.6f}\n"
-            f"  P&L No Realizado: {unrealized_pnl:.2f} USDT\n\n"
-        )
+            precio_entrada = data.get('precio_compra', 0.0)
+            cantidad = data.get('cantidad_base', 0.0)
 
-    summary_message += f"<b>Total P&L No Realizado: {total_unrealized_pnl_usdt:.2f} USDT</b>"
+            # Construir el mensaje para cada símbolo según el formato deseado
+            summary_message += (
+                f"📊 <b>{_escape_html_entities(symbol)}</b>\n"
+                f"Posición:\n"
+                f"  Entrada: {_escape_html_entities(f'{precio_entrada:.4f}')} | "
+                f"Cantidad: {_escape_html_entities(f'{cantidad:.6f}')} | "
+                f"PA: {_escape_html_entities(f'{current_price:.4f}')}\n\n"
+            )
+
+        except Exception as e:
+            logging.error(
+                f"❌ Error al obtener datos para {symbol} en el resumen de posiciones: {e}", exc_info=True)
+            summary_message += f" - <b>{_escape_html_entities(symbol)}</b>: Error al obtener datos: {_escape_html_entities(e)}.\n\n"
+
     send_telegram_message(token, chat_id, summary_message)
