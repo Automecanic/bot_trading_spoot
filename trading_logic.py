@@ -22,17 +22,18 @@ logging.basicConfig(level=logging.INFO,
 FIRESTORE_TRANSACTIONS_COLLECTION_PATH = f"artifacts/{os.getenv('__app_id', 'default-app-id')}/public/data/transactions_history"
 
 
-# Modificación: Ahora calcula y devuelve dos EMAs (corta y larga)
-def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_larga, rsi_periodo):
+# Modificación: Ahora calcula y devuelve tres EMAs (corta, media y larga)
+def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_media, ema_periodo_larga, rsi_periodo):
     """
-    Calcula la Media Móvil Exponencial (EMA) corta, EMA larga y el Índice de Fuerza Relativa (RSI)
+    Calcula la Media Móvil Exponencial (EMA) corta, EMA media, EMA larga y el Índice de Fuerza Relativa (RSI)
     para un símbolo dado.
     Requiere el cliente de Binance y los períodos para cada indicador.
     """
     try:
         # Obtener datos históricos (velas) para el cálculo de indicadores.
         # Se obtienen suficientes velas para la EMA más larga y el RSI.
-        max_periodo = max(ema_periodo_corta, ema_periodo_larga, rsi_periodo)
+        max_periodo = max(ema_periodo_corta, ema_periodo_media,
+                          ema_periodo_larga, rsi_periodo)
         klines = client.get_historical_klines(
             # +50 para asegurar datos
             symbol, KLINE_INTERVAL_1MINUTE, f"{max_periodo + 50} minutes ago UTC")
@@ -43,7 +44,7 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_larga, rsi_p
         if len(close_prices) < max_periodo:
             logging.warning(
                 f"⚠️ No hay suficientes datos para calcular indicadores para {symbol}. Se necesitan al menos {max_periodo} velas.")
-            return None, None, None
+            return None, None, None, None
 
         # Función auxiliar para calcular una EMA
         def calculate_single_ema(prices, period):
@@ -56,10 +57,10 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_larga, rsi_p
                     (ema * (1 - smoothing_factor))
             return ema
 
-        # Calcular EMA Corta
+        # Calcular EMAs
         ema_corta_valor = calculate_single_ema(close_prices, ema_periodo_corta)
-
-        # Calcular EMA Larga
+        ema_media_valor = calculate_single_ema(
+            close_prices, ema_periodo_media)  # Nueva EMA media
         ema_larga_valor = calculate_single_ema(close_prices, ema_periodo_larga)
 
         # Calcular RSI
@@ -77,7 +78,7 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_larga, rsi_p
         if len(gains) < rsi_periodo:
             logging.warning(
                 f"⚠️ No hay suficientes datos para calcular RSI para {symbol}. Se necesitan al menos {rsi_periodo} cambios de precio.")
-            return ema_corta_valor, ema_larga_valor, None
+            return ema_corta_valor, ema_media_valor, ema_larga_valor, None
 
         avg_gain = sum(gains[:rsi_periodo]) / rsi_periodo
         avg_loss = sum(losses[:rsi_periodo]) / rsi_periodo
@@ -95,12 +96,12 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_larga, rsi_p
         rsi_valor = 100 - \
             (100 / (1 + rs)) if avg_loss != 0 or avg_gain != 0 else 50
 
-        return ema_corta_valor, ema_larga_valor, rsi_valor
+        return ema_corta_valor, ema_media_valor, ema_larga_valor, rsi_valor
 
     except Exception as e:
         logging.error(
             f"❌ Error al calcular EMA/RSI para {symbol}: {e}", exc_info=True)
-        return None, None, None
+        return None, None, None, None
 
 
 def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_porcentaje, symbol, riesgo_por_operacion_porcentaje, capital_total):
