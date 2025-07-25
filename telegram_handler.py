@@ -478,7 +478,7 @@ def send_help_message(token, chat_id):
         " - <code>/set_rsi_periodo &lt;valor&gt;</code>: Establece el período del RSI (ej. 14).\n"
         " - <code>/set_rsi_umbral &lt;valor&gt;</code>: Establece el umbral de sobrecompra del RSI (ej. 70).\n"
         " - <code>/set_intervalo &lt;segundos&gt;</code>: Establece el intervalo del ciclo principal del bot en segundos (ej. 300).\n"
-        " - <code>/set_breakeven_porcentaje &lt;valor&gt;</code>: Establece el porcentaje de ganancia para mover SL a breakeven (ej. 0.005).\n\n"
+        " - <code>/set_breakeven_porcentaje &lt;valor&gt;</code>: Mueve SL a breakeven (ej. /set_breakeven_porcentaje 0.005).\n\n"
         "<b>Informes:</b>\n"
         " - <code>/csv</code>: Genera y envía un archivo CSV con las transacciones del día hasta el momento.\n"
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n"

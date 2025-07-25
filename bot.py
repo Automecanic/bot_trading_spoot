@@ -637,8 +637,8 @@ try:
                     f"EMA Media ({EMA_MEDIA_PERIODO}m): {ema_media_valor:.2f}\n"
                     f"EMA Larga ({EMA_LARGA_PERIODO}m): {ema_larga_valor:.2f}\n"
                     f"RSI ({RSI_PERIODO}m): {rsi_valor:.2f}\n"
-                    # Muestra tendencia con emoji y texto.
-                    f"Tend: {trend_emoji} <b>{trend_text}</b>"
+                    # Aplicar escape a trend_text
+                    f"Tend: {trend_emoji} <b>{telegram_handler._escape_html_entities(trend_text)}</b>"
                 )
 
                 # --- LÓGICA DE COMPRA ---
@@ -814,7 +814,8 @@ try:
                                 ganancia = (salida - precio_compra) * \
                                     cantidad_a_vender_real
                                 mensaje_simbolo += (
-                                    f"\n✅ VENTA ejecutada por {motivo_venta} a {salida:.2f} USDT\n"
+                                    # Aplicar escape a motivo_venta
+                                    f"\n✅ VENTA ejecutada por {telegram_handler._escape_html_entities(motivo_venta)} a {salida:.2f} USDT\n"
                                     f"Ganancia/Pérdida: {ganancia:.2f} USDT"
                                 )
                             else:  # Si la orden de venta falló.
