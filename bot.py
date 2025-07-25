@@ -530,8 +530,8 @@ try:
                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"Preparando informe del día {ultima_fecha_informe_enviado}...")
                 with shared_data_lock:  # Protege el acceso a transacciones_diarias.
                     # Ahora, enviar_informe_diario leerá de Firestore.
-                    # No necesita transacciones_diarias.
-                    reporting_manager.enviar_informe_diario(
+                    # Usar la función de reporting_manager para generar y enviar el CSV.
+                    reporting_manager.generar_y_enviar_csv_ahora(
                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
             # Actualiza la fecha del último informe enviado a la fecha actual.
@@ -548,6 +548,15 @@ try:
             symbols_to_remove = []
             # Iterar sobre una copia para permitir la modificación del original.
             for symbol, data in list(posiciones_abiertas.items()):
+                # 1. Eliminar si el símbolo NO está en la lista de SYMBOLS monitoreados.
+                if symbol not in SYMBOLS:
+                    logging.warning(
+                        f"⚠️ Símbolo {symbol} en posiciones_abiertas no está en la lista de símbolos monitoreados ({SYMBOLS}). Marcando para eliminación.")
+                    symbols_to_remove.append(symbol)
+                    # Pasa al siguiente símbolo, no es necesario verificar el balance.
+                    continue
+
+                # 2. Si el símbolo está monitoreado, verificar su balance real en Binance.
                 base_asset = symbol.replace("USDT", "")
                 actual_balance = binance_utils.obtener_saldo_moneda(
                     client, base_asset)
@@ -561,27 +570,26 @@ try:
                         break
 
                 # Define un pequeño umbral para considerar un saldo "demasiado pequeño".
-                # Usar min_qty para el activo específico es más preciso, o un valor muy pequeño si min_qty es 0.
                 threshold = max(min_qty, 0.00000001)
 
-                # Si el saldo real es insignificante y la posición está en nuestro registro, la eliminamos.
-                # También se añade una condición para no eliminar si el símbolo está en la lista de SYMBOLS
-                # y el saldo no es cero, para evitar eliminar posiciones activas por un error de lectura temporal.
-                if actual_balance < threshold and symbol in posiciones_abiertas:
+                # Si el saldo real es insignificante, la eliminamos.
+                if actual_balance < threshold:
                     logging.warning(
                         f"⚠️ Saldo real de {base_asset} ({actual_balance:.8f}) para {symbol} es demasiado bajo (umbral: {threshold:.8f}). Marcando posición para eliminación.")
                     symbols_to_remove.append(symbol)
 
             for symbol in symbols_to_remove:
-                # Elimina la posición del diccionario interno del bot.
-                del posiciones_abiertas[symbol]
-                # Guarda los cambios en las posiciones.
-                position_manager.save_open_positions_debounced(
-                    posiciones_abiertas)
-                telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                                                       f"🗑️ Posición de <b>{telegram_handler._escape_html_entities(symbol)}</b> eliminada del registro del bot debido a saldo insuficiente en Binance.")
-                logging.info(
-                    f"Posición de {symbol} eliminada del registro interno debido a saldo real insuficiente.")
+                # Doble verificación por si se eliminó en una iteración anterior.
+                if symbol in posiciones_abiertas:
+                    # Elimina la posición del diccionario interno del bot.
+                    del posiciones_abiertas[symbol]
+                    # Guarda los cambios en las posiciones.
+                    position_manager.save_open_positions_debounced(
+                        posiciones_abiertas)
+                    telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                                                           f"🗑️ Posición de <b>{telegram_handler._escape_html_entities(symbol)}</b> eliminada del registro del bot debido a saldo insuficiente o no monitoreado.")
+                    logging.info(
+                        f"Posición de {symbol} eliminada del registro interno debido a saldo real insuficiente o no monitoreado.")
             logging.info(
                 f"DEBUG: Posiciones abiertas después de limpieza proactiva: {len(posiciones_abiertas)}")
         # --- FIN DE LA LIMPIEZA PROACTIVA ---
@@ -829,16 +837,15 @@ try:
                         else:  # Si no hay saldo de la criptomoneda para vender.
                             mensaje_simbolo += f"\n⚠️ No hay {telegram_handler._escape_html_entities(base)} disponible para vender o cantidad muy pequeña."
 
-                # Añade el resumen de saldos al mensaje del símbolo.
-                with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
-                    # Aplicar escape HTML a la salida de obtener_saldos_formateados
-                    mensaje_simbolo += "\n" + telegram_handler._escape_html_entities(
-                        binance_utils.obtener_saldos_formateados(client, posiciones_abiertas))
                 # Acumula el mensaje del símbolo al mensaje general.
                 general_message += mensaje_simbolo + "\n\n"
 
             logging.info(
                 f"DEBUG: Posiciones abiertas al final del ciclo de trading (para mensaje general): {len(posiciones_abiertas)}")
+
+            # El mensaje general ahora se enviará con el resumen de saldos al final.
+            # La función send_current_positions_summary se encargará de esto.
+            # Para el ciclo principal, simplemente enviamos el mensaje acumulado de cada símbolo.
             telegram_handler.send_telegram_message(
                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
             # Actualiza la marca de tiempo del último chequeo de trading.
