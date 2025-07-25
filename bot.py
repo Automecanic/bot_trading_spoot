@@ -441,6 +441,7 @@ def handle_telegram_commands():
                     # Comando para mostrar resumen de posiciones.
                     elif command == "/posiciones_actuales":
                         with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
+                            # El mensaje de posiciones actuales ahora solo mostrará las posiciones activas en el diccionario.
                             telegram_handler.send_current_positions_summary(
                                 client, posiciones_abiertas, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
                     # Comando para resetear el beneficio acumulado.
@@ -541,9 +542,11 @@ try:
 
         # --- PROACTIVE POSITION CLEANUP BASED ON ACTUAL BINANCE BALANCES ---
         # Esto asegura que el estado interno del bot refleje la realidad antes de procesar.
-        symbols_to_remove = []
-        with shared_data_lock:
-            # Itera sobre una copia para permitir la modificación.
+        with shared_data_lock:  # Asegura acceso exclusivo a posiciones_abiertas.
+            logging.info(
+                f"DEBUG: Posiciones abiertas antes de limpieza proactiva: {len(posiciones_abiertas)}")
+            symbols_to_remove = []
+            # Iterar sobre una copia para permitir la modificación del original.
             for symbol, data in list(posiciones_abiertas.items()):
                 base_asset = symbol.replace("USDT", "")
                 actual_balance = binance_utils.obtener_saldo_moneda(
@@ -555,15 +558,16 @@ try:
                 for f in info['filters']:
                     if f['filterType'] == 'LOT_SIZE':
                         min_qty = float(f['minQty'])
-                        # Se encontró el filtro LOT_SIZE, no es necesario seguir buscando.
                         break
 
                 # Define un pequeño umbral para considerar un saldo "demasiado pequeño".
-                # Usar min_qty para el activo específico es más preciso.
-                # Usa el min_qty de Binance o un número muy pequeño.
+                # Usar min_qty para el activo específico es más preciso, o un valor muy pequeño si min_qty es 0.
                 threshold = max(min_qty, 0.00000001)
 
-                if actual_balance < threshold:
+                # Si el saldo real es insignificante y la posición está en nuestro registro, la eliminamos.
+                # También se añade una condición para no eliminar si el símbolo está en la lista de SYMBOLS
+                # y el saldo no es cero, para evitar eliminar posiciones activas por un error de lectura temporal.
+                if actual_balance < threshold and symbol in posiciones_abiertas:
                     logging.warning(
                         f"⚠️ Saldo real de {base_asset} ({actual_balance:.8f}) para {symbol} es demasiado bajo (umbral: {threshold:.8f}). Marcando posición para eliminación.")
                     symbols_to_remove.append(symbol)
@@ -578,6 +582,8 @@ try:
                                                        f"🗑️ Posición de <b>{telegram_handler._escape_html_entities(symbol)}</b> eliminada del registro del bot debido a saldo insuficiente en Binance.")
                 logging.info(
                     f"Posición de {symbol} eliminada del registro interno debido a saldo real insuficiente.")
+            logging.info(
+                f"DEBUG: Posiciones abiertas después de limpieza proactiva: {len(posiciones_abiertas)}")
         # --- FIN DE LA LIMPIEZA PROACTIVA ---
 
         # --- LÓGICA PRINCIPAL DE TRADING ---
@@ -831,6 +837,8 @@ try:
                 # Acumula el mensaje del símbolo al mensaje general.
                 general_message += mensaje_simbolo + "\n\n"
 
+            logging.info(
+                f"DEBUG: Posiciones abiertas al final del ciclo de trading (para mensaje general): {len(posiciones_abiertas)}")
             telegram_handler.send_telegram_message(
                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
             # Actualiza la marca de tiempo del último chequeo de trading.
@@ -856,8 +864,18 @@ except KeyboardInterrupt:
 except Exception as e:  # Captura cualquier excepción general en el bucle principal.
     logging.error(f"Error general en el bot: {e}", exc_info=True)
     with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
-        telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error general en el bot: {telegram_handler._escape_html_entities(e)}\n\n{telegram_handler._escape_html_entities(binance_utils.obtener_saldos_formateados(client, posiciones_abiertas))}")
+        # Aquí también enviar un resumen de las posiciones_abiertas actuales para depuración.
+        current_positions_summary_for_error = "Estado de posiciones abiertas en el momento del error:\n"
+        if posiciones_abiertas:
+            for symbol, data in posiciones_abiertas.items():
+                current_positions_summary_for_error += f"- {telegram_handler._escape_html_entities(symbol)}: Cantidad={telegram_handler._escape_html_entities(str(data.get('cantidad_base', 'N/A')))}, Precio Compra={telegram_handler._escape_html_entities(str(data.get('precio_compra', 'N/A')))}\n"
+        else:
+            current_positions_summary_for_error += "No hay posiciones abiertas registradas."
+
+        telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                                               f"❌ Error general en el bot: {telegram_handler._escape_html_entities(e)}\n\n"
+                                               f"{telegram_handler._escape_html_entities(binance_utils.obtener_saldos_formateados(client, posiciones_abiertas))}\n\n"
+                                               f"{telegram_handler._escape_html_entities(current_positions_summary_for_error)}")
     print(f"❌ Error general en el bot: {e}")  # Imprime el error en la consola.
     # En caso de un error inesperado, también se intenta detener el hilo de Telegram.
     telegram_stop_event.set()
