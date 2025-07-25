@@ -60,6 +60,8 @@ def send_telegram_message(token, chat_id, message):
             "⚠️ TOKEN o CHAT_ID de Telegram no configurados. No se pueden enviar mensajes.")
         return False
 
+    # Inicializa response a None para asegurar que siempre esté definida.
+    response = None
     # Construye la URL para la API de Telegram.
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     # Define la carga útil (payload) de la solicitud HTTP, incluyendo el chat_id, el texto y el modo de parseo HTML.
@@ -80,7 +82,8 @@ def send_telegram_message(token, chat_id, message):
         # Captura cualquier excepción relacionada con la solicitud (ej. problemas de red, errores HTTP).
         logging.error(f"❌ Error al enviar mensaje a Telegram: {e}")
         # *** NUEVO LOGGING PARA DEPURACIÓN ***
-        if response and response.status_code == 400:
+        # Ahora response siempre estará definida.
+        if response is not None and response.status_code == 400:
             logging.error(
                 f"❌ Detalles del error 400 (Bad Request): Mensaje enviado: '{message}'")
         # ***********************************
@@ -106,6 +109,8 @@ def send_telegram_document(token, chat_id, file_path, caption=""):
             "⚠️ TOKEN de Telegram no configurado. No se pueden enviar documentos.")
         return False
 
+    # Inicializa response a None para asegurar que siempre esté definida.
+    response = None
     # Construye la URL para la API de Telegram.
     url = f"https://api.telegram.org/bot{token}/sendDocument"
     try:
@@ -161,6 +166,8 @@ def get_telegram_updates(offset=None, token=None):
             "⚠️ TOKEN de Telegram no configurado. No se pueden obtener actualizaciones.")
         return None
 
+    # Inicializa response a None para asegurar que siempre esté definida.
+    response = None
     # Construye la URL para la API de Telegram.
     url = f"https://api.telegram.org/bot{token}/getUpdates"
     # Define los parámetros de la solicitud, incluyendo un timeout para long polling.
@@ -179,7 +186,8 @@ def get_telegram_updates(offset=None, token=None):
         # Captura errores de solicitud.
         logging.error(f"❌ Error al obtener actualizaciones de Telegram: {e}")
         # *** NUEVO LOGGING PARA DEPURACIÓN ***
-        if response and response.status_code == 409:
+        # Ahora response siempre estará definida.
+        if response is not None and response.status_code == 409:
             logging.error(
                 f"❌ POSIBLE CONFLICTO (Error 409): Otra instancia de tu bot podría estar ejecutándose. Asegúrate de que solo haya una instancia activa. Detalles: {e}")
         # ***********************************
@@ -505,7 +513,7 @@ def send_help_message(token, chat_id):
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
         " - <code>/reset_beneficio</code>: Resetear beneficio acumulado a cero.\n"
         " - <code>/get_positions_file</code>: Obtener archivo de posiciones abiertas.\n"
-        # Descripción del comando de posiciones actuales.
+        # Descripción del nuevo comando
         " - <code>/posiciones_actuales</code>: Mostrar resumen de posiciones abiertas.\n"
         " - <code>/menu</code>: Muestra el teclado de comandos principal.\n"
         " - <code>/hide_menu</code>: Oculta el teclado de comandos.\n\n"
