@@ -8,11 +8,28 @@ import logging
 import os
 # Importa el módulo csv para trabajar con archivos CSV (generación de informes).
 import csv
+import html  # Importa el módulo html para escapar caracteres HTML.
 
 # Configura el sistema de registro básico para este módulo.
 # Esto asegura que los mensajes informativos, advertencias y errores se muestren en la consola del bot.
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def _escape_html_entities(text):
+    """
+    Escapa caracteres especiales HTML en una cadena de texto.
+    Esto es crucial para asegurar que el texto dinámico no rompa el formato HTML
+    cuando se usa parse_mode='HTML' en Telegram.
+    Por ejemplo, '<' se convierte en '&lt;', '>' en '&gt;', '&' en '&amp;', etc.
+
+    Args:
+        text (str): La cadena de texto a escapar.
+
+    Returns:
+        str: La cadena de texto con los caracteres HTML escapados.
+    """
+    return html.escape(str(text))  # Asegura que el input sea string antes de escapar.
 
 
 def send_telegram_message(token, chat_id, message):
@@ -39,6 +56,7 @@ def send_telegram_message(token, chat_id, message):
     # Define la carga útil (payload) de la solicitud HTTP, incluyendo el chat_id, el texto y el modo de parseo HTML.
     payload = {
         'chat_id': chat_id,
+        # El mensaje ya debe contener las partes dinámicas escapadas si es necesario.
         'text': message,
         # Permite usar etiquetas HTML en el mensaje para formato.
         'parse_mode': 'HTML'
@@ -95,17 +113,18 @@ def send_telegram_document(token, chat_id, file_path, caption=""):
         logging.error(
             f"❌ Error enviando documento Telegram '{file_path}': {e}")
         send_telegram_message(
-            token, chat_id, f"❌ Error enviando documento: {e}")
+            # Escapar el error
+            token, chat_id, f"❌ Error enviando documento: {_escape_html_entities(e)}")
         return False  # Retorna False en caso de error.
     except Exception as e:
         # Captura cualquier otro error inesperado.
         logging.error(f"❌ Error inesperado en send_telegram_document: {e}")
         send_telegram_message(
-            token, chat_id, f"❌ Error inesperado enviando documento: {e}")
+            # Escapar el error
+            token, chat_id, f"❌ Error inesperado enviando documento: {_escape_html_entities(e)}")
         return False  # Retorna False en caso de error.
 
 
-# Se invirtió el orden de los argumentos para que 'token' sea el segundo
 def get_telegram_updates(offset=None, token=None):
     """
     Obtiene actualizaciones (mensajes) del bot de Telegram usando el método long polling.
@@ -134,7 +153,7 @@ def get_telegram_updates(offset=None, token=None):
     # Tiempo máximo de espera para nuevas actualizaciones (30 segundos).
     params = {'timeout': 30}
     if offset:
-        # Si se proporciona un offset, se añaden los mensajes posteriores a ese ID.
+        # Si se proporciona un offset, solo se obtienen mensajes posteriores a ese ID.
         params['offset'] = offset
     try:
         # Envía la solicitud GET a la API de Telegram.
@@ -179,7 +198,7 @@ def send_keyboard_menu(token, chat_id, message_text="Selecciona una opción:"):
             [{'text': '/beneficio'}, {'text': '/get_params'}],
             # Fila 2: CSV y Archivo de Posiciones
             [{'text': '/csv'}, {'text': '/get_positions_file'}],
-            # Fila 3: Nuevo botón para posiciones actuales
+            # Fila 3: Botón para posiciones actuales
             [{'text': '/posiciones_actuales'}],
             [{'text': '/reset_beneficio'}],  # Fila 4: Resetear Beneficio
             # Fila 5: Ayuda y Ocultar Menú
@@ -362,7 +381,7 @@ def send_positions_file_content(token, chat_id, file_path):
     # Verifica si el archivo de posiciones existe.
     if not os.path.exists(file_path):
         send_telegram_message(
-            token, chat_id, f"❌ Archivo de posiciones abiertas (<code>{file_path}</code>) no encontrado.")
+            token, chat_id, f"❌ Archivo de posiciones abiertas (<code>{_escape_html_entities(file_path)}</code>) no encontrado.")
         logging.warning(f"Intento de leer {file_path}, pero no existe.")
         return
 
@@ -401,12 +420,25 @@ def send_positions_file_content(token, chat_id, file_path):
         with open(csv_file_name, 'w', newline='', encoding='utf-8') as csvfile:
             # Crea un escritor de diccionarios CSV.
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
             writer.writeheader()  # Escribe la fila de encabezados.
             writer.writerows(csv_rows)  # Escribe todas las filas de datos.
 
-        # Prepara la leyenda para el documento de Telegram.
-        caption = f"📄 Posiciones abiertas en formato CSV: <code>{os.path.basename(csv_file_name)}</code>"
-        # Envía el archivo CSV como un documento a Telegram.
+            # NUEVO: Añadir una fila de resumen con el beneficio total acumulado.
+            # Crea un diccionario para la fila de resumen, inicializando todos los campos con cadenas vacías.
+            summary_row = {field: '' for field in fieldnames}
+            # Etiqueta para identificar esta fila como el resumen total.
+            summary_row['timestamp'] = 'RESUMEN_TOTAL'
+            # Calcula el beneficio total.
+            summary_row['ganancia_usdt'] = sum(
+                r.get('ganancia_usdt', 0.0) for r in csv_rows if 'ganancia_usdt' in r)
+            # Descripción del contenido de la fila.
+            summary_row['motivo_venta'] = 'Beneficio Total Acumulado'
+            # Escribe la fila de resumen en el CSV.
+            writer.writerow(summary_row)
+
+        # Envía el archivo CSV generado a Telegram como un documento.
+        caption = f"📄 Posiciones abiertas en formato CSV: <code>{_escape_html_entities(os.path.basename(csv_file_name))}</code>"
         send_telegram_document(token, chat_id, csv_file_name, caption)
         logging.info(
             f"Archivo {csv_file_name} enviado como documento a Telegram.")
@@ -414,13 +446,13 @@ def send_positions_file_content(token, chat_id, file_path):
     except json.JSONDecodeError as e:
         # Captura errores si el archivo JSON no es válido.
         send_telegram_message(
-            token, chat_id, f"❌ Error al leer el archivo JSON de posiciones (formato inválido): {e}")
+            token, chat_id, f"❌ Error al leer el archivo JSON de posiciones (formato inválido): {_escape_html_entities(e)}")
         logging.error(
             f"❌ Error al decodificar JSON de {file_path}: {e}", exc_info=True)
     except Exception as e:
         # Captura cualquier otro error durante la conversión o envío.
         send_telegram_message(
-            token, chat_id, f"❌ Error al convertir o enviar el archivo de posiciones como CSV: {e}")
+            token, chat_id, f"❌ Error al convertir o enviar el archivo de posiciones como CSV: {_escape_html_entities(e)}")
         logging.error(
             f"❌ Error al procesar {file_path} y enviar como CSV: {e}", exc_info=True)
     finally:
@@ -431,13 +463,7 @@ def send_positions_file_content(token, chat_id, file_path):
 
 
 def send_help_message(token, chat_id):
-    """
-    Envía un mensaje de ayuda detallado con la lista de todos los comandos disponibles.
-
-    Args:
-        token (str): El token de la API de tu bot de Telegram.
-        chat_id (str): El ID del chat de Telegram al que se enviará el mensaje de ayuda.
-    """
+    """Envía un mensaje de ayuda detallado con la lista de todos los comandos disponibles."""
     help_message = (
         "🤖 <b>Comandos disponibles:</b>\n\n"
         "<b>Parámetros de Estrategia:</b>\n"
@@ -491,26 +517,24 @@ def send_current_positions_summary(client, open_positions, telegram_token, teleg
 
     # Encabezado del mensaje.
     summary_message = "📊 <b>Tus posiciones abiertas:</b>\n\n"
-    total_value_usdt = 0.0  # Inicializa el valor total de las posiciones.
+    total_value_usdt = 0.0
 
     # Itera sobre cada posición abierta.
     for symbol, data in open_positions.items():
         try:
             # Obtiene el precio actual del símbolo desde Binance.
             current_price = client.get_symbol_ticker(symbol=symbol)['price']
-            # Convierte el precio a flotante.
             current_price = float(current_price)
 
-            # Obtiene la cantidad de la moneda base.
             cantidad = data.get('cantidad_base', 0.0)
-            # Calcula el valor actual de la posición en USDT.
             valor_actual = cantidad * current_price
-            total_value_usdt += valor_actual  # Suma al valor total.
+            total_value_usdt += valor_actual
 
             # Añade los detalles de la posición al mensaje de resumen.
+            # Se escapan las partes dinámicas que no son etiquetas HTML.
             summary_message += (
-                # Cantidad y símbolo base.
-                f" - <b>{cantidad:.6f} {symbol.replace('USDT', '')}</b> "
+                # Cantidad y símbolo base escapado.
+                f" - <b>{cantidad:.6f} {_escape_html_entities(symbol.replace('USDT', ''))}</b> "
                 # Precio de compra y valor actual.
                 f"a {data['precio_compra']:.4f} USDT (valor actual: <b>{valor_actual:.2f} USDT</b>)\n"
             )
@@ -518,8 +542,8 @@ def send_current_positions_summary(client, open_positions, telegram_token, teleg
             # Captura errores al obtener datos de un símbolo y lo registra.
             logging.error(
                 f"❌ Error al obtener datos para {symbol} en el resumen de posiciones: {e}", exc_info=True)
-            # Añade un mensaje de error para ese símbolo.
-            summary_message += f" - <b>{symbol}</b>: Error al obtener datos.\n"
+            # Añade un mensaje de error para ese símbolo, escapando el error.
+            summary_message += f" - <b>{_escape_html_entities(symbol)}</b>: Error al obtener datos: {_escape_html_entities(e)}.\n"
 
     # Añade el valor total al final.
     summary_message += f"\n<b>Valor total de posiciones: {total_value_usdt:.2f} USDT</b>"

@@ -219,7 +219,7 @@ def handle_telegram_commands():
                 # Verifica si el chat ID del mensaje es el autorizado.
                 if chat_id != TELEGRAM_CHAT_ID:
                     telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"⚠️ Comando recibido de chat no autorizado: <code>{chat_id}</code>")
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"⚠️ Comando recibido de chat no autorizado: <code>{telegram_handler._escape_html_entities(chat_id)}</code>")
                     logging.warning(
                         f"Comando de chat no autorizado: {chat_id}")
                     continue  # Ignora el mensaje si no es del chat autorizado.
@@ -424,7 +424,7 @@ def handle_telegram_commands():
                                     TOTAL_BENEFICIO_ACUMULADO = bot_params['TOTAL_BENEFICIO_ACUMULADO']
                             else:
                                 telegram_handler.send_telegram_message(
-                                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Símbolo <b>{symbol_to_sell}</b> no reconocido o no monitoreado por el bot.")
+                                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Símbolo <b>{telegram_handler._escape_html_entities(symbol_to_sell)}</b> no reconocido o no monitoreado por el bot.")
                         else:
                             telegram_handler.send_telegram_message(
                                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Uso: <code>/vender &lt;SIMBOLO_USDT&gt;</code> (ej. /vender BTCUSDT)")
@@ -467,9 +467,9 @@ def handle_telegram_commands():
                     # Registra el error completo.
                     logging.error(
                         f"Error procesando comando '{text}': {ex}", exc_info=True)
-                    # Envía un mensaje de error a Telegram.
+                    # Envía un mensaje de error a Telegram, escapando el error.
                     telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error interno al procesar comando: {ex}")
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error interno al procesar comando: {telegram_handler._escape_html_entities(ex)}")
 
 # Función que se ejecutará en el hilo separado para escuchar Telegram.
 
@@ -491,6 +491,8 @@ def telegram_listener(stop_event):
             time.sleep(TELEGRAM_LISTEN_INTERVAL)
         except Exception as e:
             logging.error(f"Error en el hilo de Telegram: {e}", exc_info=True)
+            telegram_handler.send_telegram_message(
+                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error en el hilo de Telegram: {telegram_handler._escape_html_entities(e)}")
             # Espera un poco más en caso de error para evitar bucles rápidos.
             time.sleep(TELEGRAM_LISTEN_INTERVAL * 2)
 
@@ -573,7 +575,7 @@ try:
                 position_manager.save_open_positions_debounced(
                     posiciones_abiertas)
                 telegram_handler.send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                                                       f"🗑️ Posición de <b>{symbol}</b> eliminada del registro del bot debido a saldo insuficiente en Binance.")
+                                                       f"🗑️ Posición de <b>{telegram_handler._escape_html_entities(symbol)}</b> eliminada del registro del bot debido a saldo insuficiente en Binance.")
                 logging.info(
                     f"Posición de {symbol} eliminada del registro interno debido a saldo real insuficiente.")
         # --- FIN DE LA LIMPIEZA PROACTIVA ---
@@ -629,7 +631,7 @@ try:
 
                 # Construye un mensaje de estado para el símbolo actual.
                 mensaje_simbolo = (
-                    f"📊 <b>{symbol}</b>\n"
+                    f"📊 <b>{telegram_handler._escape_html_entities(symbol)}</b>\n"
                     f"Precio actual: {precio_actual:.2f} USDT\n"
                     f"EMA Corta ({EMA_CORTA_PERIODO}m): {ema_corta_valor:.2f}\n"
                     f"EMA Media ({EMA_MEDIA_PERIODO}m): {ema_media_valor:.2f}\n"
@@ -681,14 +683,14 @@ try:
                             # Usa total_capital.
                             riesgo_max_trade_usd = total_capital * RIESGO_POR_OPERACION_PORCENTAJE
                             mensaje_simbolo += (
-                                f"\nCantidad comprada: {cantidad_comprada_real:.6f} {base}"
+                                f"\nCantidad comprada: {cantidad_comprada_real:.6f} {telegram_handler._escape_html_entities(base)}"
                                 f"\nInversión en este trade: {capital_invertido_usd:.2f} USDT"
                                 f"\nRiesgo Máx. Permitido por Trade: {riesgo_max_trade_usd:.2f} USDT"
                             )
                         else:  # Si la orden de compra falló.
-                            mensaje_simbolo += f"\n❌ COMPRA fallida para {symbol}."
+                            mensaje_simbolo += f"\n❌ COMPRA fallida para {telegram_handler._escape_html_entities(symbol)}."
                     else:  # Si no hay suficiente capital o la cantidad es muy pequeña.
-                        mensaje_simbolo += f"\n⚠️ No hay suficiente capital o cantidad mínima para comprar {symbol} con el riesgo definido."
+                        mensaje_simbolo += f"\n⚠️ No hay suficiente capital o cantidad mínima para comprar {telegram_handler._escape_html_entities(symbol)} con el riesgo definido."
 
                 # --- LÓGICA DE VENTA (Take Profit, Stop Loss Fijo, Trailing Stop Loss, Breakeven) ---
                 # Si ya hay una posición abierta para este símbolo.
@@ -732,7 +734,7 @@ try:
                             # Marca que el SL ya se movió a Breakeven.
                             posiciones_abiertas[symbol]['sl_moved_to_breakeven'] = True
                         telegram_handler.send_telegram_message(
-                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"🔔 SL de <b>{symbol}</b> movido a Breakeven: <b>{breakeven_nivel_real:.2f}</b>")
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"🔔 SL de <b>{telegram_handler._escape_html_entities(symbol)}</b> movido a Breakeven: <b>{breakeven_nivel_real:.2f}</b>")
                         logging.info(
                             f"SL de {symbol} movido a Breakeven: {breakeven_nivel_real:.2f}")
                         with shared_data_lock:  # Protege la modificación de posiciones_abiertas.
@@ -816,9 +818,9 @@ try:
                                     f"Ganancia/Pérdida: {ganancia:.2f} USDT"
                                 )
                             else:  # Si la orden de venta falló.
-                                mensaje_simbolo += f"\n❌ VENTA fallida para {symbol}."
+                                mensaje_simbolo += f"\n❌ VENTA fallida para {telegram_handler._escape_html_entities(symbol)}."
                         else:  # Si no hay saldo de la criptomoneda para vender.
-                            mensaje_simbolo += f"\n⚠️ No hay {base} disponible para vender o cantidad muy pequeña."
+                            mensaje_simbolo += f"\n⚠️ No hay {telegram_handler._escape_html_entities(base)} disponible para vender o cantidad muy pequeña."
 
                 # Añade el resumen de saldos al mensaje del símbolo.
                 with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
@@ -854,7 +856,7 @@ except Exception as e:  # Captura cualquier excepción general en el bucle princ
     logging.error(f"Error general en el bot: {e}", exc_info=True)
     with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
         telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error general en el bot: {e}\n\n{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error general en el bot: {telegram_handler._escape_html_entities(e)}\n\n{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
     print(f"❌ Error general en el bot: {e}")  # Imprime el error en la consola.
     # En caso de un error inesperado, también se intenta detener el hilo de Telegram.
     telegram_stop_event.set()

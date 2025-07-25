@@ -1,5 +1,5 @@
 import config_manager  # Para guardar bot_params actualizado.
-import telegram_handler
+import telegram_handler  # Importar telegram_handler para usar _escape_html_entities
 import position_manager
 import binance_utils
 # Importa el módulo logging para registrar eventos y mensajes informativos, de advertencia o error.
@@ -162,37 +162,32 @@ def calcular_cantidad_a_comprar(client, saldo_usdt, precio_actual, stop_loss_por
             "❌ STOP_LOSS_PORCENTAJE es cero o negativo. No se puede calcular la cantidad a comprar.")
         return 0.0
 
-    cantidad_ideal_por_riesgo = max_usdt_a_riesgar / \
+    cantidad_por_riesgo = max_usdt_a_riesgar / \
         (precio_actual * stop_loss_porcentaje)
-
-    # 3. Determinar el monto en USDT a invertir para comprar esa cantidad ideal.
-    # Monto a invertir = Cantidad ideal * Precio actual.
-    usdt_para_cantidad_ideal = cantidad_ideal_por_riesgo * precio_actual
     logging.info(
-        f"DEBUG: USDT necesario para cantidad ideal por riesgo ({cantidad_ideal_por_riesgo:.8f}): {usdt_para_cantidad_ideal:.2f} USDT")
+        f"DEBUG: Cantidad calculada por riesgo ({riesgo_por_operacion_porcentaje*100:.2f}%): {cantidad_por_riesgo:.8f}")
 
-    # 4. Asegurarse de que el monto a invertir no exceda el saldo USDT disponible.
-    # El monto real a invertir será el mínimo entre el saldo disponible y el monto calculado.
+    # 3. Calcular la cantidad máxima de la moneda base que se puede comprar con el saldo USDT disponible.
     # Se aplica un pequeño buffer al saldo USDT disponible para cubrir comisiones y asegurar la ejecución.
     BUFFER_PORCENTAJE = 0.0015  # 0.15% de buffer para comisiones y precisión.
-    saldo_usdt_con_buffer = saldo_usdt * (1 - BUFFER_PORCENTAJE)
-
-    usdt_a_invertir_real = min(usdt_para_cantidad_ideal, saldo_usdt_con_buffer)
+    max_cantidad_por_saldo = (
+        saldo_usdt * (1 - BUFFER_PORCENTAJE)) / precio_actual
     logging.info(
-        f"DEBUG: Saldo USDT disponible: {saldo_usdt:.2f} USDT, Saldo con buffer ({BUFFER_PORCENTAJE*100:.2f}%): {saldo_usdt_con_buffer:.2f} USDT, USDT a invertir real: {usdt_a_invertir_real:.2f} USDT")
+        f"DEBUG: Saldo USDT disponible: {saldo_usdt:.2f} USDT, Saldo con buffer ({BUFFER_PORCENTAJE*100:.2f}%): {saldo_usdt * (1 - BUFFER_PORCENTAJE):.2f} USDT")
+    logging.info(
+        f"DEBUG: Máxima cantidad posible por saldo: {max_cantidad_por_saldo:.8f}")
 
-    # 5. Calcular la cantidad final de la criptomoneda a comprar basada en el monto real a invertir.
-    if precio_actual <= 0:  # Doble chequeo, aunque ya se hizo al inicio.
-        logging.warning(
-            "❌ Precio actual es cero o negativo al recalcular cantidad final. Abortando.")
-        return 0.0
+    # 4. Tomar el mínimo de las dos cantidades calculadas.
+    cantidad_raw = min(cantidad_por_riesgo, max_cantidad_por_saldo)
+    logging.info(
+        f"DEBUG: Cantidad raw (mínimo entre riesgo y saldo): {cantidad_raw:.8f}")
 
-    cantidad_final_calculada = usdt_a_invertir_real / precio_actual
-
-    # 6. Ajustar la cantidad final al step_size y verificar el min_notional de Binance.
+    # 5. Ajustar la cantidad final al step_size de Binance.
     step_size = binance_utils.get_step_size(client, symbol)
     cantidad_ajustada_por_step = binance_utils.ajustar_cantidad(
-        cantidad_final_calculada, step_size)
+        cantidad_raw, step_size)
+    logging.info(
+        f"DEBUG: Cantidad ajustada por step_size: {cantidad_ajustada_por_step:.8f}")
 
     # Obtener el filtro MIN_NOTIONAL de Binance para el símbolo.
     min_notional = 0.0
@@ -249,7 +244,7 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
             logging.error(
                 f"❌ No se pudo obtener el precio actual para {symbol} justo antes de la compra. Abortando.")
             telegram_handler.send_telegram_message(
-                telegram_bot_token, telegram_chat_id, f"❌ Error: No se pudo obtener precio para <b>{symbol}</b> antes de comprar.")
+                telegram_bot_token, telegram_chat_id, f"❌ Error: No se pudo obtener precio para <b>{telegram_handler._escape_html_entities(symbol)}</b> antes de comprar.")
             return None
 
         # Definir un buffer para comisiones y asegurar que la orden pase.
@@ -281,7 +276,7 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
         if final_cantidad_to_buy <= 0 or final_cantidad_to_buy < min_qty or (final_cantidad_to_buy * latest_precio_actual) < min_notional:
             logging.warning(f"⚠️ Compra de {symbol} abortada: Cantidad final ({final_cantidad_to_buy:.8f}) o valor nocional ({final_cantidad_to_buy * latest_precio_actual:.2f} USDT) es insuficiente para la orden. Saldo USDT: {latest_saldo_usdt:.2f}. Min. Nocional: {min_notional:.2f}, Min. Qty: {min_qty:.8f}")
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"⚠️ Compra de <b>{symbol}</b> abortada: Saldo insuficiente o cantidad/valor mínimo no alcanzado. Saldo USDT: {latest_saldo_usdt:.2f}.")
+                                                   f"⚠️ Compra de <b>{telegram_handler._escape_html_entities(symbol)}</b> abortada: Saldo insuficiente o cantidad/valor mínimo no alcanzado. Saldo USDT: {latest_saldo_usdt:.2f}.")
             return None
 
         logging.info(
@@ -330,7 +325,6 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
             db = firestore_utils.get_firestore_db()
             if db:
                 try:
-                    # Firestore generará un ID de documento automático para cada transacción.
                     db.collection(FIRESTORE_TRANSACTIONS_COLLECTION_PATH).add(
                         transaccion)
                     logging.info(
@@ -338,24 +332,26 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
                 except Exception as e:
                     logging.error(
                         f"❌ Error al guardar transacción de COMPRA en Firestore para {symbol}: {e}", exc_info=True)
+                    telegram_handler.send_telegram_message(
+                        telegram_bot_token, telegram_chat_id, f"❌ Error al guardar transacción de COMPRA en Firestore para {telegram_handler._escape_html_entities(symbol)}: {telegram_handler._escape_html_entities(e)}")
 
             # Envía notificación de compra exitosa a Telegram.
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"🟢 COMPRA de <b>{symbol}</b> ejecutada a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad: {cantidad_comprada_real:.6f}")
+                                                   f"🟢 COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b> ejecutada a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad: {cantidad_comprada_real:.6f}")
             logging.info(
                 f"✅ COMPRA exitosa de {cantidad_comprada_real} {symbol} a {precio_ejecucion}")
             return order  # Retorna la respuesta de la orden de Binance.
         else:
             # Si la orden no se llenó, envía un mensaje de fallo a Telegram y registra el error.
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"❌ Fallo al ejecutar COMPRA de <b>{symbol}</b>. Estado: {order.get('status', 'N/A')}")
+                                                   f"❌ Fallo al ejecutar COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b>. Estado: {telegram_handler._escape_html_entities(order.get('status', 'N/A'))}. Respuesta: {telegram_handler._escape_html_entities(str(order))}")
             logging.error(
                 f"❌ Fallo al ejecutar COMPRA de {symbol}. Respuesta: {order}")
             return None  # Retorna None si la compra falló.
     except Exception as e:
         # Captura cualquier error durante el intento de compra.
         telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                               f"❌ Error al intentar COMPRA de <b>{symbol}</b>: {e}")
+                                               f"❌ Error al intentar COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: {telegram_handler._escape_html_entities(e)}")
         logging.error(
             f"❌ Error en la función comprar para {symbol}: {e}", exc_info=True)
         return None  # Retorna None en caso de error.
@@ -410,7 +406,7 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
         # Verificar si la cantidad ajustada es suficiente para una orden.
         if cantidad_a_vender_ajustada <= 0 or cantidad_a_vender_ajustada < min_qty:
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"⚠️ No hay <b>{symbol}</b> disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
+                                                   f"⚠️ No hay <b>{telegram_handler._escape_html_entities(symbol)}</b> disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
             logging.warning(
                 f"⚠️ No hay {symbol} disponible para vender o la cantidad ({cantidad_a_vender_ajustada:.8f}) es demasiado pequeña (mínimo: {min_qty:.8f}).")
 
@@ -429,7 +425,7 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
 
         if valor_nocional < min_notional:
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"⚠️ El valor de venta de <b>{symbol}</b> ({valor_nocional:.2f} USDT) es inferior al mínimo nocional requerido ({min_notional:.2f} USDT). No se puede vender.")
+                                                   f"⚠️ El valor de venta de <b>{telegram_handler._escape_html_entities(symbol)}</b> ({valor_nocional:.2f} USDT) es inferior al mínimo nocional requerido ({min_notional:.2f} USDT). No se puede vender.")
             logging.warning(
                 f"⚠️ El valor de venta de {symbol} ({valor_nocional:.2f} USDT) es inferior al mínimo nocional requerido ({min_notional:.2f} USDT).")
 
@@ -512,30 +508,32 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
                 except Exception as e:
                     logging.error(
                         f"❌ Error al guardar transacción de VENTA en Firestore para {symbol}: {e}", exc_info=True)
+                    telegram_handler.send_telegram_message(
+                        telegram_bot_token, telegram_chat_id, f"❌ Error al guardar transacción de VENTA en Firestore para {telegram_handler._escape_html_entities(symbol)}: {telegram_handler._escape_html_entities(e)}")
 
             # Envía mensaje de Telegram más específico según el estado de la orden.
             if order['status'] == 'EXPIRED':
                 telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                       f"🟠 VENTA de <b>{symbol}</b> (PARCIAL/EXPIRADA) ejecutada por <b>{motivo_venta}</b> a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad vendida: {cantidad_vendida_real:.6f}. Ganancia: <b>{ganancia_usdt:.2f}</b> USDT.")
+                                                       f"🟠 VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b> (PARCIAL/EXPIRADA) ejecutada por <b>{telegram_handler._escape_html_entities(motivo_venta)}</b> a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad vendida: {cantidad_vendida_real:.6f}. Ganancia: <b>{ganancia_usdt:.2f}</b> USDT.")
                 logging.info(
                     f"✅ VENTA PARCIAL/EXPIRADA exitosa de {cantidad_vendida_real} {symbol} a {precio_ejecucion} por {motivo_venta}. Ganancia: {ganancia_usdt:.2f} USDT")
             else:  # Estado 'FILLED'.
                 telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                       f"🔴 VENTA de <b>{symbol}</b> ejecutada por <b>{motivo_venta}</b> a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad: {cantidad_vendida_real:.6f}. Ganancia: <b>{ganancia_usdt:.2f}</b> USDT.")
+                                                       f"🔴 VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b> ejecutada por <b>{telegram_handler._escape_html_entities(motivo_venta)}</b> a <b>{precio_ejecucion:.4f}</b> USDT. Cantidad: {cantidad_vendida_real:.6f}. Ganancia: <b>{ganancia_usdt:.2f}</b> USDT.")
                 logging.info(
                     f"✅ VENTA exitosa de {cantidad_vendida_real} {symbol} a {precio_ejecucion} por {motivo_venta}. Ganancia: {ganancia_usdt:.2f} USDT")
             return order  # Retorna la respuesta de la orden de Binance.
         else:
             # Si la orden no se llenó o falló, envía un mensaje de fallo y registra el error.
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"❌ Fallo al ejecutar VENTA de <b>{symbol}</b>. Estado: {order.get('status', 'N/A')}. Respuesta: {order}")
+                                                   f"❌ Fallo al ejecutar VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b>. Estado: {telegram_handler._escape_html_entities(order.get('status', 'N/A'))}. Respuesta: {telegram_handler._escape_html_entities(str(order))}")
             logging.error(
                 f"❌ Fallo al ejecutar VENTA de {symbol}. Respuesta: {order}")
             return None  # Retorna None si la venta falló.
     except Exception as e:
         # Captura cualquier error durante el intento de venta.
         telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                               f"❌ Error al intentar VENTA de <b>{symbol}</b>: {e}")
+                                               f"❌ Error al intentar VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: {telegram_handler._escape_html_entities(e)}")
         logging.error(
             f"❌ Error en la función vender para {symbol}: {e}", exc_info=True)
         return None  # Retorna None en caso de error.
@@ -563,7 +561,7 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
     """
     if symbol not in posiciones_abiertas:
         telegram_handler.send_telegram_message(
-            telegram_bot_token, telegram_chat_id, f"❌ No hay una posición abierta para <b>{symbol}</b> en el registro del bot.")
+            telegram_bot_token, telegram_chat_id, f"❌ No hay una posición abierta para <b>{telegram_handler._escape_html_entities(symbol)}</b> en el registro del bot.")
         return None  # Retorna None si no hay posición en el registro.
 
     base_asset = symbol.replace("USDT", "")  # Extrae el activo base.
@@ -572,7 +570,7 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
 
     if saldo_real_activo <= 0:
         telegram_handler.send_telegram_message(
-            telegram_bot_token, telegram_chat_id, f"❌ No hay saldo de <b>{symbol}</b> en tu cuenta de Binance para vender.")
+            telegram_bot_token, telegram_chat_id, f"❌ No hay saldo de <b>{telegram_handler._escape_html_entities(symbol)}</b> en tu cuenta de Binance para vender.")
         # Eliminar la posición del registro del bot si el saldo real es cero.
         if symbol in posiciones_abiertas:
             del posiciones_abiertas[symbol]
@@ -601,7 +599,7 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
 
     if cantidad_a_vender_ajustada <= 0 or cantidad_a_vender_ajustada < min_qty or valor_nocional < min_notional:
         telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                               f"⚠️ La cantidad de <b>{symbol}</b> disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta. Mínimo nocional: {min_notional:.2f} USDT, Mínimo cantidad: {min_qty:.8f}.")
+                                               f"⚠️ La cantidad de <b>{telegram_handler._escape_html_entities(symbol)}</b> disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta. Mínimo nocional: {min_notional:.2f} USDT, Mínimo cantidad: {min_qty:.8f}.")
         logging.warning(
             f"⚠️ La cantidad de {symbol} disponible ({cantidad_a_vender_ajustada:.8f}) o su valor ({valor_nocional:.2f} USDT) es demasiado pequeña para una orden de venta.")
         # Eliminar la posición del registro del bot si la cantidad es muy pequeña para vender.
@@ -614,7 +612,7 @@ def vender_por_comando(client, symbol, posiciones_abiertas, transacciones_diaria
         return None  # Retorna None si la cantidad es insuficiente.
 
     telegram_handler.send_telegram_message(
-        telegram_bot_token, telegram_chat_id, f"⚙️ Intentando vender <b>{symbol}</b> por comando...")
+        telegram_bot_token, telegram_chat_id, f"⚙️ Intentando vender <b>{telegram_handler._escape_html_entities(symbol)}</b> por comando...")
 
     # Reutilizar la función vender principal para ejecutar la venta.
     orden = vender(
