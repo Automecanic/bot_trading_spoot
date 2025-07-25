@@ -824,9 +824,9 @@ try:
 
                 # Añade el resumen de saldos al mensaje del símbolo.
                 with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
-                    mensaje_simbolo += "\n" + \
-                        binance_utils.obtener_saldos_formateados(
-                            client, posiciones_abiertas)
+                    # Aplicar escape HTML a la salida de obtener_saldos_formateados
+                    mensaje_simbolo += "\n" + telegram_handler._escape_html_entities(
+                        binance_utils.obtener_saldos_formateados(client, posiciones_abiertas))
                 # Acumula el mensaje del símbolo al mensaje general.
                 general_message += mensaje_simbolo + "\n\n"
 
@@ -856,7 +856,7 @@ except Exception as e:  # Captura cualquier excepción general en el bucle princ
     logging.error(f"Error general en el bot: {e}", exc_info=True)
     with shared_data_lock:  # Protege el acceso a posiciones_abiertas.
         telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error general en el bot: {telegram_handler._escape_html_entities(e)}\n\n{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, f"❌ Error general en el bot: {telegram_handler._escape_html_entities(e)}\n\n{telegram_handler._escape_html_entities(binance_utils.obtener_saldos_formateados(client, posiciones_abiertas))}")
     print(f"❌ Error general en el bot: {e}")  # Imprime el error en la consola.
     # En caso de un error inesperado, también se intenta detener el hilo de Telegram.
     telegram_stop_event.set()
