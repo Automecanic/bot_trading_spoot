@@ -329,6 +329,7 @@ def set_telegram_commands_menu(token):
     url = f"https://api.telegram.org/bot{token}/setMyCommands"
 
     # Define la lista de comandos y sus descripciones.
+    # Se corrigió la sintaxis de esta lista.
     commands = [
         {"command": "start", "description": "Iniciar el bot y mostrar menú"},
         {"command": "menu", "description": "Mostrar el menú de comandos"},
@@ -364,7 +365,6 @@ def set_telegram_commands_menu(token):
             "description": "Resetear beneficio acumulado a cero"},
         {"command": "get_positions_file",
             "description": "Obtener archivo de posiciones abiertas"},
-        # Descripción del nuevo comando
         {"command": "posiciones_actuales",
             "description": "Mostrar resumen de posiciones abiertas"},
         {"command": "help", "description": "Mostrar ayuda y comandos disponibles"}
@@ -513,237 +513,50 @@ def send_help_message(token, chat_id):
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
         " - <code>/reset_beneficio</code>: Resetear beneficio acumulado a cero.\n"
         " - <code>/get_positions_file</code>: Obtener archivo de posiciones abiertas.\n"
-        # Descripción del nuevo comando
-        {"command": "posiciones_actuales",
-            "description": "Mostrar resumen de posiciones abiertas"},
-        {"command": "help", "description": "Mostrar ayuda y comandos disponibles"}
-    ]
-
-    # Define la carga útil (payload) con la lista de comandos.
-    payload = {'commands': json.dumps(commands)}
-    # Define las cabeceras de la solicitud.
-    headers = {'Content-Type': 'application/json'}
-
-    try:
-        # Envía la solicitud POST a la API de Telegram.
-        response = requests.post(url, data=payload, headers=headers)
-        # Lanza una excepción HTTPError si la respuesta no fue exitosa.
-        response.raise_for_status()
-        result = response.json()  # Obtiene la respuesta JSON.
-        if result['ok']:
-            logging.info(
-                "✅ Menú de comandos de Telegram configurado con éxito.")
-            return True  # Retorna True si la configuración fue exitosa.
-        else:
-            logging.error(
-                f"❌ Fallo al configurar el menú de comandos: {result.get('description', 'Error desconocido')}")
-            return False  # Retorna False si hubo un fallo.
-    except requests.exceptions.RequestException as e:
-        # Captura errores de red.
-        logging.error(f"❌ Error de red al configurar el menú de comandos: {e}")
-        return False  # Retorna False en caso de error.
-
-
-def send_positions_file_content(token, chat_id, file_path):
-    """
-    Lee el contenido del archivo OPEN_POSITIONS_FILE (JSON), lo convierte a CSV
-    y lo envía como un documento adjunto al chat de Telegram.
-
-    Args:
-        token (str): El token de la API de tu bot de Telegram.
-        chat_id (str): El ID del chat de Telegram al que se enviará el documento.
-        file_path (str): La ruta al archivo JSON de posiciones abiertas.
-    """
-    # Verifica si el archivo de posiciones existe.
-    if not os.path.exists(file_path):
-        send_telegram_message(
-            token, chat_id, f"❌ Archivo de posiciones abiertas (<code>{_escape_html_entities(file_path)}</code>) no encontrado.")
-        logging.warning(f"Intento de leer {file_path}, pero no existe.")
-        return
-
-    # Genera un nombre para el archivo CSV temporal.
-    csv_file_name = file_path.replace(".json", ".csv")
-    try:
-        # Abre el archivo JSON de posiciones en modo lectura.
-        with open(file_path, 'r') as f:
-            positions_data = json.load(f)  # Carga los datos JSON.
-
-        # Si no hay posiciones, envía un mensaje y sale.
-        if not positions_data:
-            send_telegram_message(
-                token, chat_id, "🚫 No hay posiciones abiertas registradas para generar el CSV.")
-            return
-
-        # Preparar los datos para el CSV
-        # Recopila todas las claves (nombres de columna) de todas las posiciones.
-        all_keys = set()
-        for data in positions_data.values():
-            all_keys.update(data.keys())
-
-        # Define los nombres de los campos (columnas) para el CSV, asegurando que 'Symbol' sea la primera.
-        # Ordena el resto de las columnas para consistencia.
-        fieldnames = ['Symbol'] + sorted(list(all_keys))
-
-        # Crea una lista de diccionarios, donde cada diccionario es una fila del CSV.
-        csv_rows = []
-        for symbol, data in positions_data.items():
-            row = {'Symbol': symbol}  # La primera columna es el símbolo.
-            # Añade todos los campos de la posición a la fila.
-            row.update(data)
-            csv_rows.append(row)
-
-        # Abre el archivo CSV en modo escritura, con newline='' para evitar filas en blanco y encoding='utf-8'.
-        with open(csv_file_name, 'w', newline='', encoding='utf-8') as csvfile:
-            # Crea un escritor de diccionarios CSV.
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
-            writer.writeheader()  # Escribe la fila de encabezados.
-            writer.writerows(csv_rows)  # Escribe todas las filas de datos.
-
-            # NUEVO: Añadir una fila de resumen con el beneficio total acumulado.
-            # Crea un diccionario para la fila de resumen, inicializando todos los campos con cadenas vacías.
-            summary_row = {field: '' for field in fieldnames}
-            # Etiqueta para identificar esta fila como el resumen total.
-            summary_row['timestamp'] = 'RESUMEN_TOTAL'
-            # Calcula el beneficio total.
-            summary_row['ganancia_usdt'] = sum(
-                r.get('ganancia_usdt', 0.0) for r in csv_rows if 'ganancia_usdt' in r)
-            # Descripción del contenido de la fila.
-            summary_row['motivo_venta'] = 'Beneficio Total Acumulado'
-            # Escribe la fila de resumen en el CSV.
-            writer.writerow(summary_row)
-
-        # Envía el archivo CSV generado a Telegram como un documento.
-        caption = f"📄 Posiciones abiertas en formato CSV: <code>{_escape_html_entities(os.path.basename(csv_file_name))}</code>"
-        send_telegram_document(token, chat_id, csv_file_name, caption)
-        logging.info(
-            f"Archivo {csv_file_name} enviado como documento a Telegram.")
-
-    except json.JSONDecodeError as e:
-        # Captura errores si el archivo JSON no es válido.
-        send_telegram_message(
-            token, chat_id, f"❌ Error al leer el archivo JSON de posiciones (formato inválido): {_escape_html_entities(e)}")
-        logging.error(
-            f"❌ Error al decodificar JSON de {file_path}: {e}", exc_info=True)
-    except Exception as e:
-        # Captura cualquier otro error durante la conversión o envío.
-        send_telegram_message(
-            token, chat_id, f"❌ Error al convertir o enviar el archivo de posiciones como CSV: {_escape_html_entities(e)}")
-        logging.error(
-            f"❌ Error al procesar {file_path} y enviar como CSV: {e}", exc_info=True)
-    finally:
-        # Este bloque se ejecuta siempre, asegurando que el archivo CSV temporal se elimine.
-        if os.path.exists(csv_file_name):
-            os.remove(csv_file_name)
-            logging.info(f"Archivo CSV temporal {csv_file_name} eliminado.")
-
-
-def send_help_message(token, chat_id):
-    """Envía un mensaje de ayuda detallado con la lista de todos los comandos disponibles."""
-    help_message = (
-        "🤖 <b>Comandos disponibles:</b>\n\n"
-        "<b>Parámetros de Estrategia:</b>\n"
-        " - <code>/get_params</code>: Muestra los parámetros actuales del bot.\n"
-        " - <code>/set_tp &lt;valor&gt;</code>: Establece el porcentaje de Take Profit (ej. 0.03).\n"
-        " - <code>/set_sl_fijo &lt;valor&gt;</code>: Establece el porcentaje de Stop Loss Fijo (ej. 0.02).\n"
-        " - <code>/set_tsl &lt;valor&gt;</code>: Establece el porcentaje de Trailing Stop Loss (ej. 0.015).\n"
-        " - <code>/set_riesgo &lt;valor&gt;</code>: Establece el porcentaje de riesgo por operación (ej. 0.01).\n"
-        " - <code>/set_ema_corta_periodo &lt;valor&gt;</code>: Establece el período de la EMA corta (ej. 20).\n"
-        " - <code>/set_ema_media_periodo &lt;valor&gt;</code>: Establece el período de la EMA media (ej. 50).\n"
-        " - <code>/set_ema_larga_periodo &lt;valor&gt;</code>: Establece el período de la EMA larga (ej. 200).\n"
-        " - <code>/set_rsi_periodo &lt;valor&gt;</code>: Establece el período del RSI (ej. 14).\n"
-        " - <code>/set_rsi_umbral &lt;valor&gt;</code>: Establece el umbral de sobrecompra del RSI (ej. 70).\n"
-        " - <code>/set_intervalo &lt;segundos&gt;</code>: Establece el intervalo del ciclo principal del bot en segundos (ej. 300).\n"
-        " - <code>/set_breakeven_porcentaje &lt;valor&gt;</code>: Mueve SL a breakeven (ej. /set_breakeven_porcentaje 0.005).\n\n"
-        "<b>Informes:</b>\n"
-        " - <code>/csv</code>: Genera y envía un archivo CSV con las transacciones del día hasta el momento.\n"
-        " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n"
-        "<b>Utilidades:</b>\n"
-        " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
-        " - <code>/reset_beneficio</code>: Resetear beneficio acumulado a cero.\n"
-        " - <code>/get_positions_file</code>: Obtener archivo de posiciones abiertas.\n"
-        # Descripción del nuevo comando
         " - <code>/posiciones_actuales</code>: Mostrar resumen de posiciones abiertas.\n"
-        " - <code>/menu</code>: Muestra el teclado de comandos principal.\n"
-        " - <code>/hide_menu</code>: Oculta el teclado de comandos.\n\n"
-        "<b>Ayuda:</b>\n"
-        " - <code>/help</code>: Muestra este mensaje de ayuda.\n\n"
-        "<i>Recuerda usar valores decimales para porcentajes y enteros para períodos/umbrales.</i>"
+        " - <code>/help</code>: Mostrar ayuda y comandos disponibles."
     )
-    # Envía el mensaje de ayuda.
     send_telegram_message(token, chat_id, help_message)
 
 
-def send_current_positions_summary(client, open_positions, telegram_token, telegram_chat_id):
+def send_current_positions_summary(client, open_positions, token, chat_id):
     """
-    Envía un resumen de las posiciones abiertas actuales a Telegram.
-    Muestra la cantidad, el símbolo y el valor actual en USDT.
-    Ahora incluye un resumen de capital total al final.
-    """
-    # Importar binance_utils aquí para evitar circular import si binance_utils también importa telegram_handler
-    # O asegurar que binance_utils no importe telegram_handler.
-    import binance_utils  # Re-importar para asegurar disponibilidad
+    Envía un resumen de las posiciones abiertas actuales del bot a Telegram.
+    Incluye el precio de entrada, el precio actual y la ganancia/pérdida no realizada.
 
+    Args:
+        client: Cliente de la API de Binance.
+        open_positions (dict): Diccionario de posiciones abiertas.
+        token (str): Token del bot de Telegram.
+        chat_id (str): ID del chat de Telegram.
+    """
     if not open_positions:
-        send_telegram_message(telegram_token, telegram_chat_id,
-                              "🚫 No tienes posiciones abiertas en este momento.")
+        send_telegram_message(
+            token, chat_id, "🚫 No hay posiciones abiertas actualmente.")
         return
 
-    summary_message = "📊 <b>Tus posiciones abiertas:</b>\n\n"
+    summary_message = "📊 <b>Resumen de Posiciones Abiertas:</b>\n\n"
+    total_unrealized_pnl_usdt = 0.0
 
-    # Log the number of positions being processed for debugging
-    logging.info(
-        f"DEBUG: send_current_positions_summary está procesando {len(open_positions)} posiciones.")
+    for symbol, data in open_positions.items():
+        precio_compra = data['precio_compra']
+        cantidad_base = data['cantidad_base']
 
-    # Iterate over a sorted list of symbols for consistent output
-    sorted_symbols = sorted(open_positions.keys())
+        precio_actual = binance_utils.obtener_precio_actual(client, symbol)
+        if precio_actual is None:
+            summary_message += f"⚠️ No se pudo obtener el precio actual para <b>{_escape_html_entities(symbol)}</b>. Saltando.\n"
+            continue
 
-    for symbol in sorted_symbols:
-        data = open_positions[symbol]  # Get data for the current symbol
-        try:
-            current_price = client.get_symbol_ticker(symbol=symbol)['price']
-            current_price = float(current_price)
+        unrealized_pnl = (precio_actual - precio_compra) * cantidad_base
+        total_unrealized_pnl_usdt += unrealized_pnl
 
-            cantidad = data.get('cantidad_base', 0.0)
-            valor_actual = cantidad * current_price
+        summary_message += (
+            f"<b>{_escape_html_entities(symbol)}</b>:\n"
+            f"  Entrada: {precio_compra:.4f} USDT\n"
+            f"  Actual: {precio_actual:.4f} USDT\n"
+            f"  Cantidad: {cantidad_base:.6f}\n"
+            f"  P&L No Realizado: {unrealized_pnl:.2f} USDT\n\n"
+        )
 
-            escaped_cantidad = _escape_html_entities(f"{cantidad:.6f}")
-            escaped_base_symbol = _escape_html_entities(
-                symbol.replace('USDT', ''))
-            escaped_precio_compra = _escape_html_entities(
-                f"{data['precio_compra']:.4f}")
-            escaped_valor_actual = _escape_html_entities(f"{valor_actual:.2f}")
-
-            summary_message += (
-                f" - <b>{escaped_cantidad} {escaped_base_symbol}</b> "
-                f"a {escaped_precio_compra} USDT (valor actual: <b>{escaped_valor_actual} USDT</b>)\n"
-            )
-            # Add position details only if present and relevant (e.g., for actively managed positions)
-            if 'precio_compra' in data and 'stop_loss_fijo_nivel_actual' in data:
-                # Assuming these fields are always present for actively managed positions
-                # and that the logic in trading_bot_completo ensures only these are in open_positions
-                summary_message += (
-                    f"  Entrada: {_escape_html_entities(f"{data['precio_compra']:.4f}")} | "
-                    f"SL Fijo: {_escape_html_entities(f"{data['stop_loss_fijo_nivel_actual']:.4f}")}\n"
-                    f"  Max Alcanzado: {_escape_html_entities(f"{data['max_precio_alcanzado']:.4f}")}\n"
-                )
-
-        except Exception as e:
-            logging.error(
-                f"❌ Error al obtener datos para {symbol} en el resumen de posiciones: {e}", exc_info=True)
-            summary_message += f" - <b>{_escape_html_entities(symbol)}</b>: Error al obtener datos: {_escape_html_entities(e)}.\n"
-
-    # Calculate overall capital summary once at the end
-    saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT")
-    total_capital_usdt = binance_utils.get_total_capital_usdt(
-        client, open_positions)  # This already includes USDT balance
-    eur_usdt_conversion_rate = binance_utils.obtener_precio_eur(client)
-    total_capital_eur = total_capital_usdt * \
-        eur_usdt_conversion_rate if eur_usdt_conversion_rate else 0
-
-    summary_message += f"\n<b>Resumen Global:</b>\n"
-    summary_message += f"💰 Saldo USDT: {_escape_html_entities(f'{saldo_usdt:.2f}')}\n"
-    summary_message += f"💲 Capital Total (USDT): {_escape_html_entities(f'{total_capital_usdt:.2f}')}\n"
-    summary_message += f"💶 Capital Total (EUR): {_escape_html_entities(f'{total_capital_eur:.2f}')}"
-
-    send_telegram_message(telegram_token, telegram_chat_id, summary_message)
+    summary_message += f"<b>Total P&L No Realizado: {total_unrealized_pnl_usdt:.2f} USDT</b>"
+    send_telegram_message(token, chat_id, summary_message)
