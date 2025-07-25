@@ -15,6 +15,8 @@ from datetime import datetime
 import firestore_utils
 # Importa el módulo os para interactuar con el sistema operativo, como acceder a variables de entorno.
 import os
+# Importa la excepción específica de Binance API.
+from binance.exceptions import BinanceAPIException
 
 # Configura el sistema de registro para este módulo.
 logging.basicConfig(level=logging.INFO,
@@ -343,15 +345,25 @@ def comprar(client, symbol, cantidad, posiciones_abiertas, stop_loss_porcentaje,
             return order  # Retorna la respuesta de la orden de Binance.
         else:
             # Si la orden no se llenó, envía un mensaje de fallo a Telegram y registra el error.
+            error_msg_content = f"Estado: {telegram_handler._escape_html_entities(order.get('status', 'N/A'))}"
+            if 'msg' in order:  # Algunos errores de Binance tienen un campo 'msg'
+                error_msg_content += f", Mensaje: {telegram_handler._escape_html_entities(order['msg'])}"
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"❌ Fallo al ejecutar COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b>. Estado: {telegram_handler._escape_html_entities(order.get('status', 'N/A'))}. Respuesta: {telegram_handler._escape_html_entities(str(order))}")
+                                                   f"❌ Fallo al ejecutar COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b>. {error_msg_content}")
             logging.error(
                 f"❌ Fallo al ejecutar COMPRA de {symbol}. Respuesta: {order}")
             return None  # Retorna None si la compra falló.
-    except Exception as e:
-        # Captura cualquier error durante el intento de compra.
+    except BinanceAPIException as e:
+        # Captura errores específicos de la API de Binance.
         telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                               f"❌ Error al intentar COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: {telegram_handler._escape_html_entities(e)}")
+                                               f"❌ Error de Binance API al intentar COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: Código: {telegram_handler._escape_html_entities(str(e.code))}, Mensaje: {telegram_handler._escape_html_entities(e.message)}")
+        logging.error(
+            f"❌ Error en la función comprar para {symbol}: {e}", exc_info=True)
+        return None  # Retorna None en caso de error.
+    except Exception as e:
+        # Captura cualquier otro error general durante el intento de compra.
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
+                                               f"❌ Error general al intentar COMPRA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: {telegram_handler._escape_html_entities(str(e))}")
         logging.error(
             f"❌ Error en la función comprar para {symbol}: {e}", exc_info=True)
         return None  # Retorna None en caso de error.
@@ -524,16 +536,26 @@ def vender(client, symbol, cantidad_a_vender, posiciones_abiertas, total_benefic
                     f"✅ VENTA exitosa de {cantidad_vendida_real} {symbol} a {precio_ejecucion} por {motivo_venta}. Ganancia: {ganancia_usdt:.2f} USDT")
             return order  # Retorna la respuesta de la orden de Binance.
         else:
-            # Si la orden no se llenó o falló, envía un mensaje de fallo y registra el error.
+            # Si la orden no se llenó, envía un mensaje de fallo a Telegram y registra el error.
+            error_msg_content = f"Estado: {telegram_handler._escape_html_entities(order.get('status', 'N/A'))}"
+            if 'msg' in order:  # Algunos errores de Binance tienen un campo 'msg'
+                error_msg_content += f", Mensaje: {telegram_handler._escape_html_entities(order['msg'])}"
             telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                                   f"❌ Fallo al ejecutar VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b>. Estado: {telegram_handler._escape_html_entities(order.get('status', 'N/A'))}. Respuesta: {telegram_handler._escape_html_entities(str(order))}")
+                                                   f"❌ Fallo al ejecutar VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b>. {error_msg_content}")
             logging.error(
                 f"❌ Fallo al ejecutar VENTA de {symbol}. Respuesta: {order}")
             return None  # Retorna None si la venta falló.
-    except Exception as e:
-        # Captura cualquier error durante el intento de venta.
+    except BinanceAPIException as e:
+        # Captura errores específicos de la API de Binance.
         telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
-                                               f"❌ Error al intentar VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: {telegram_handler._escape_html_entities(e)}")
+                                               f"❌ Error de Binance API al intentar VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: Código: {telegram_handler._escape_html_entities(str(e.code))}, Mensaje: {telegram_handler._escape_html_entities(e.message)}")
+        logging.error(
+            f"❌ Error en la función vender para {symbol}: {e}", exc_info=True)
+        return None  # Retorna None en caso de error.
+    except Exception as e:
+        # Captura cualquier otro error general durante el intento de venta.
+        telegram_handler.send_telegram_message(telegram_bot_token, telegram_chat_id,
+                                               f"❌ Error general al intentar VENTA de <b>{telegram_handler._escape_html_entities(symbol)}</b>: {telegram_handler._escape_html_entities(str(e))}")
         logging.error(
             f"❌ Error en la función vender para {symbol}: {e}", exc_info=True)
         return None  # Retorna None en caso de error.
