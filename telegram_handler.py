@@ -225,8 +225,8 @@ def send_keyboard_menu(token, chat_id, message_text="Selecciona una opción:"):
         'keyboard': [
             # Fila 1: Beneficio y Parámetros
             [{'text': '/beneficio'}, {'text': '/get_params'}],
-            # Fila 2: CSV y Archivo de Posiciones
-            [{'text': '/csv'}, {'text': '/get_positions_file'}],
+            # Fila 2: CSV y Análisis (anteriormente /get_positions_file)
+            [{'text': '/csv'}, {'text': '/analisis'}],
             # Fila 3: Botón para posiciones actuales
             [{'text': '/posiciones_actuales'}],
             [{'text': '/reset_beneficio'}],  # Fila 4: Resetear Beneficio
@@ -364,8 +364,8 @@ def set_telegram_commands_menu(token):
             "description": "Vender una posición (ej. /vender BTCUSDT)"},
         {"command": "reset_beneficio",
             "description": "Resetear beneficio acumulado a cero"},
-        {"command": "get_positions_file",
-            "description": "Obtener archivo de posiciones abiertas"},
+        # Cambiado el comando y descripción
+        {"command": "analisis", "description": "Abrir página de análisis web"},
         {"command": "posiciones_actuales",
             "description": "Mostrar resumen de posiciones abiertas"},
         {"command": "help", "description": "Mostrar ayuda y comandos disponibles"}
@@ -513,9 +513,10 @@ def send_help_message(token, chat_id):
         "<b>Utilidades:</b>\n"
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
         " - <code>/reset_beneficio</code>: Resetear beneficio acumulado a cero.\n"
-        " - <code>/get_positions_file</code>: Obtener archivo de posiciones abiertas.\n"
+        # Cambiado el comando y descripción
+        " - <code>/analisis</code>: Abrir página de análisis web.\n"
         " - <code>/posiciones_actuales</code>: Mostrar resumen de posiciones abiertas.\n"
-        " - <code>/help</code>: Mostrar ayuda y comandos disponibles."
+        " - <code>/help</code>: Mostrar ayuda y comandos disponibles"
     )
     send_telegram_message(token, chat_id, help_message)
 
@@ -569,3 +570,29 @@ def send_current_positions_summary(client, open_positions, token, chat_id):
             summary_message += f" - <b>{_escape_html_entities(symbol)}</b>: Error al obtener datos: {_escape_html_entities(e)}.\n\n"
 
     send_telegram_message(token, chat_id, summary_message)
+
+
+def send_inline_url_button(token, chat_id, text, url):
+    """
+    Envía un mensaje con un botón en línea que abre una URL.
+    """
+    inline_keyboard = {
+        'inline_keyboard': [
+            [{'text': text, 'url': url}]
+        ]
+    }
+    payload = {
+        'chat_id': chat_id,
+        'text': "Haz clic para ver el análisis:",
+        'reply_markup': json.dumps(inline_keyboard)
+    }
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        logging.info(f"✅ Botón de URL en línea enviado con éxito a {chat_id}.")
+        return True
+    except requests.exceptions.RequestException as e:
+        logging.error(
+            f"❌ Error al enviar botón de URL en línea: {e}", exc_info=True)
+        return False
