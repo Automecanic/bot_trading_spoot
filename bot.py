@@ -614,8 +614,14 @@ try:
                     client, posiciones_abiertas)
                 eur_usdt_conversion_rate_global = binance_utils.obtener_precio_eur(
                     client)
-                total_capital_eur_global = total_capital_usdt_global * \
-                    eur_usdt_conversion_rate_global if eur_usdt_conversion_rate_global else 0
+                # CORRECCIÓN: Si eur_usdt_conversion_rate_global es cuántos USDT vale 1 EUR,
+                # entonces para convertir USDT a EUR, debemos DIVIDIR.
+                if eur_usdt_conversion_rate_global and eur_usdt_conversion_rate_global > 0:
+                    total_capital_eur_global = total_capital_usdt_global / \
+                        eur_usdt_conversion_rate_global
+                else:
+                    # En caso de que la tasa no sea válida.
+                    total_capital_eur_global = 0
 
             for symbol in SYMBOLS:  # Itera sobre cada símbolo de trading configurado.
                 # Extrae la criptomoneda base (ej. BTC de BTCUSDT).
@@ -904,6 +910,7 @@ except Exception as e:  # Captura cualquier excepción general en el bucle princ
     # En caso de un error inesperado, también se intenta detener el hilo de Telegram.
     telegram_stop_event.set()
     telegram_thread.join()
+
 
 """# Importa el módulo os para interactuar con el sistema operativo, como acceder a variables de entorno.
 import os
