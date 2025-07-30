@@ -9,8 +9,8 @@ import time
 import json  # Importa el módulo json para trabajar con datos en formato JSON.
 # Importa todas las enumeraciones de Binance (ej. KLINE_INTERVAL_1MINUTE) para mayor comodidad.
 from binance.enums import *
-# Importa datetime para trabajar con fechas y horas, útil para timestamps.
-from datetime import datetime
+# Importa datetime y timedelta para trabajar con fechas y horas.
+from datetime import datetime, timedelta
 # Importa el módulo para Firestore, que permite la interacción con la base de datos Firestore.
 import firestore_utils
 # Importa el módulo os para interactuar con el sistema operativo, como acceder a variables de entorno.
@@ -54,16 +54,25 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_media, ema_p
         # Se obtienen suficientes velas para la EMA más larga y el RSI, más un buffer.
         max_periodo = max(ema_periodo_corta, ema_periodo_media,
                           ema_periodo_larga, rsi_periodo)
-        # +50 para asegurar datos.
+
+        # Calcular el tiempo de inicio en milisegundos
+        # Se necesitan suficientes minutos para cubrir el período más largo + un buffer.
+        # Por ejemplo, si el período más largo es 200, y queremos 50 velas de buffer,
+        # necesitamos datos de 250 minutos atrás.
+        start_time = datetime.now() - timedelta(minutes=max_periodo + 50)
+        # Convertir el objeto datetime a milisegundos para la API de Binance.
+        start_str_ms = int(start_time.timestamp() * 1000)
+
+        # Usar el timestamp en milisegundos para get_historical_klines
         klines = client.get_historical_klines(
-            symbol, KLINE_INTERVAL_1MINUTE, f"{max_periodo + 50} minutes ago UTC")
+            symbol, KLINE_INTERVAL_1MINUTE, start_str_ms)
 
         # Extraer los precios de cierre de las velas.
         close_prices = [float(k[4]) for k in klines]
 
         if len(close_prices) < max_periodo:
             logging.warning(
-                f"⚠️ No hay suficientes datos para calcular indicadores para {symbol}. Se necesitan al menos {max_periodo} velas.")
+                f"⚠️ No hay suficientes datos para calcular indicadores para {symbol}. Se necesitan al menos {max_periodo} velas, pero se obtuvieron {len(close_prices)}.")
             return None, None, None, None
 
         # Función auxiliar interna para calcular una EMA.
@@ -71,8 +80,10 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_media, ema_p
             if period <= 0 or len(prices) < period:
                 return None
             smoothing_factor = 2 / (period + 1)
-            ema = prices[0]  # Inicializar EMA con el primer precio de cierre.
-            for i in range(1, len(prices)):
+            # Inicializar EMA con el promedio de los primeros 'period' precios
+            # Esto es una forma más robusta de inicializar la EMA para evitar sesgos iniciales.
+            ema = sum(prices[:period]) / period
+            for i in range(period, len(prices)):
                 ema = (prices[i] * smoothing_factor) + \
                     (ema * (1 - smoothing_factor))
             return ema
@@ -96,7 +107,7 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_media, ema_p
 
         if len(gains) < rsi_periodo:
             logging.warning(
-                f"⚠️ No hay suficientes datos para calcular RSI para {symbol}. Se necesitan al menos {rsi_periodo} cambios de precio.")
+                f"⚠️ No hay suficientes datos para calcular RSI para {symbol}. Se necesitan al menos {rsi_periodo} cambios de precio, pero se obtuvieron {len(gains)}.")
             return ema_corta_valor, ema_media_valor, ema_larga_valor, None
 
         # Calcular la ganancia y pérdida promedio inicial.
@@ -111,12 +122,13 @@ def calcular_ema_rsi(client, symbol, ema_periodo_corta, ema_periodo_media, ema_p
                         losses[i]) / rsi_periodo
 
         # Calcular Relative Strength (RS) y Relative Strength Index (RSI).
-        # Evitar división por cero, asignar un valor alto si solo hay ganancias.
+        # Evitar división por cero, asignar inf si solo hay ganancias.
         rs = avg_gain / \
-            avg_loss if avg_loss != 0 else (2 if avg_gain > 0 else 1)
-        # Si ambos son cero, RSI es 50 (neutral).
-        rsi_valor = 100 - \
-            (100 / (1 + rs)) if avg_loss != 0 or avg_gain != 0 else 50
+            avg_loss if avg_loss != 0 else (
+                float('inf') if avg_gain > 0 else 0)
+        rsi_valor = 100 - (100 / (1 + rs)) if (avg_loss != 0 or avg_gain != 0) and rs != float(
+            # Si ambos son cero, RSI es 50 (neutral).
+            'inf') else (100 if rs == float('inf') else 50)
 
         return ema_corta_valor, ema_media_valor, ema_larga_valor, rsi_valor
 
