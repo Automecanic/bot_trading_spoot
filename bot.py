@@ -449,9 +449,9 @@ def enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio):
         estado = "📈 TENDENCIA" if not data['en_rango'] else "🔀 RANGO"
         msg += f"• {symbol}: {estado} | ADX: {data['adx']:.1f} | Ancho: {data['band_width']:.3f}\n"
 
-    msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
-    msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
-    msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
+        msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
+        msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
+        msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
 
     telegram_handler.send_telegram_message(
         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
