@@ -57,6 +57,13 @@ def send_telegram_message(token, chat_id, message):
         bool: True si el mensaje se envió con éxito, False en caso contrario.
     """
     # Verifica si el token o el chat_id no están configurados.
+    # --- AÑADE ESTO AL PRINCIPIO DE send_telegram_message ---
+    if not message or not message.strip():
+        logging.warning("⚠️ Mensaje vacío o solo espacios. No se envía.")
+        return False
+
+# Resto del código ya existente...
+
     if not token or not chat_id:
         logging.warning(
             "⚠️ TOKEN o CHAT_ID de Telegram no configurados. No se pueden enviar mensajes.")
