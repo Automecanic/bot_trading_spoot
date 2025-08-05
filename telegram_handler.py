@@ -529,7 +529,7 @@ def send_help_message(token, chat_id):
         # Cambiado el comando y descripción
         " - <code>/analisis</code>: Abrir página de análisis web.\n"
         " - <code>/posiciones_actuales</code>: Mostrar resumen de posiciones abiertas.\n"
-        " - <code>/help</code>: Mostrar ayuda y comandos disponibles",
+        " - <code>/help</code>: Mostrar ayuda y comandos disponibles\n"
         # ---------- AÑADE ESTO AL FINAL DE "Parámetros de Estrategia" ----------
         " - <code>/set_periodo_analisis &lt;entero&gt;</code>: Ajusta período para detectar rango lateral (ej. 20)\n"
         " - <code>/set_rango_umbral_atr &lt;decimal&gt;</code>: Ajusta umbral ATR para rango (ej. 0.015)\n"
