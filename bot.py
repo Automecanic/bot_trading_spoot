@@ -721,8 +721,7 @@ try:
                     client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
                     EMA_LARGA_PERIODO, RSI_PERIODO
                 )
-                logging.debug(
-                    f"DEBUG resumen_dict[{symbol}] = {resumen_dict[symbol]}")
+
             # Simulamos ADX y band_width para simplificar
                 resumen_dict[symbol] = {
                     'en_rango': en_rango,
