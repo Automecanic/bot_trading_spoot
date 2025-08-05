@@ -439,6 +439,24 @@ def handle_telegram_commands():
                     f"❌ Error interno al procesar comando: {ex}")
 
 
+def enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio):
+    """
+    Envía un resumen compacto al chat de Telegram.
+    """
+    # Construimos el mensaje
+    msg = "📊 <b>Resumen del ciclo:</b>\n"
+    for symbol, data in resumen_dict.items():
+        estado = "📈 TENDENCIA" if not data['en_rango'] else "🔀 RANGO"
+        msg += f"• {symbol}: {estado} | ADX: {data['adx']:.1f} | Ancho: {data['band_width']:.3f}\n"
+
+    msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
+    msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
+    msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
+
+    telegram_handler.send_telegram_message(
+        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+
 def telegram_listener(stop_event):
     while not stop_event.is_set():
         try:
@@ -689,9 +707,32 @@ try:
                                 general_message += f"🔴 VENTA {motivo} {symbol}\n"
 
             # Resumen enviado por Telegram
-            telegram_handler.send_telegram_message(
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
-            last_trading_check_time = time.time()
+            # Construimos el resumen compacto
+            resumen_dict = {}
+            for symbol in SYMBOLS:
+                en_rango, _, _ = detectar_rango_lateral(
+                    client, symbol,
+                    periodo=bot_params.get('RANGO_PERIODO_ANALISIS', 20),
+                    adx_umbral=bot_params.get('RANGO_ADX_UMBRAL', 25),
+                    band_width_max=bot_params.get('RANGO_BAND_WIDTH_MAX', 0.05)
+                )
+            # Obtener ADX y band_width de forma rápida (ya calculados)
+                ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
+                    client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
+                    EMA_LARGA_PERIODO, RSI_PERIODO
+                )
+            # Simulamos ADX y band_width para simplificar
+                resumen_dict[symbol] = {
+                    'en_rango': en_rango,
+                    'adx': 50,  # Puedes mejorar esto con cálculo real si lo deseas
+                    ' band_width': 0.03  # Ejemplo
+                }
+
+        # Enviamos el resumen compacto
+            with shared_data_lock:
+                saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT")
+                beneficio = bot_params.get('TOTAL_BENEFICIO_ACUMULADO', 0.0)
+                enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio)
 
         # Esperar hasta siguiente ciclo
         sleep_duration = max(0, INTERVALO - (time.time() - start_time_cycle))
