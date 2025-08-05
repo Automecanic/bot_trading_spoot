@@ -708,6 +708,7 @@ try:
 
             # Resumen enviado por Telegram
             # Construimos el resumen compacto
+            # ---------- CONSTRUIR resumen_dict SIEMPRE COMPLETO ----------
             resumen_dict = {}
             for symbol in SYMBOLS:
                 en_rango, _, _ = detectar_rango_lateral(
@@ -716,24 +717,26 @@ try:
                     adx_umbral=bot_params.get('RANGO_ADX_UMBRAL', 25),
                     band_width_max=bot_params.get('RANGO_BAND_WIDTH_MAX', 0.05)
                 )
-            # Obtener ADX y band_width de forma rápida (ya calculados)
-                ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
-                    client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
-                    EMA_LARGA_PERIODO, RSI_PERIODO
-                )
+            resumen_dict[symbol] = {
+                'en_rango': en_rango,
+                'adx': 50.0,             # siempre float
+                'band_width': 0.030      # siempre float
+            }
 
-            # Simulamos ADX y band_width para simplificar
-                resumen_dict[symbol] = {
-                    'en_rango': en_rango,
-                    'adx': 50,  # Puedes mejorar esto con cálculo real si lo deseas
-                    ' band_width': 0.03  # Ejemplo
-                }
+            # Obtener ADX y band_width de forma rápida (ya calculados)
+            ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
+                client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
+                EMA_LARGA_PERIODO, RSI_PERIODO
+            )
 
         # Enviamos el resumen compacto
             with shared_data_lock:
                 saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT")
                 beneficio = bot_params.get('TOTAL_BENEFICIO_ACUMULADO', 0.0)
-                enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio)
+                enviar_resumen_telegram(
+                    resumen_dict,
+                    binance_utils.obtener_saldo_moneda(client, "USDT"),
+                    bot_params.get('TOTAL_BENEFICIO_ACUMULADO', 0.0))
 
         # Esperar hasta siguiente ciclo
         sleep_duration = max(0, INTERVALO - (time.time() - start_time_cycle))
