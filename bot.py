@@ -709,39 +709,87 @@ try:
             # Resumen enviado por Telegram
             # Construimos el resumen compacto
             # ---------- CONSTRUIR resumen_dict SIEMPRE COMPLETO ----------
-            resumen_dict = {}
-            for symbol in SYMBOLS:
-                en_rango, _, _ = detectar_rango_lateral(
-                    client, symbol,
-                    periodo=bot_params.get('RANGO_PERIODO_ANALISIS', 20),
-                    adx_umbral=bot_params.get('RANGO_ADX_UMBRAL', 25),
-                    band_width_max=bot_params.get('RANGO_BAND_WIDTH_MAX', 0.05)
-                )
-                resumen_dict[symbol] = {
-                    'en_rango': en_rango,
-                    'adx': 50.0,             # siempre float
-                    'band_width': 0.030      # siempre float
-                }
-
-            # Obtener ADX y band_width de forma rápida (ya calculados)
-            ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
-                client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
-                EMA_LARGA_PERIODO, RSI_PERIODO
-            )
-
-        # Enviamos el resumen compacto
+            # ---------- ENVÍO DEL INFORME DETALLADO POR SÍMBOLO ----------
+            general_message = ""
             with shared_data_lock:
-                saldo_usdt = binance_utils.obtener_saldo_moneda(client, "USDT")
-                beneficio = bot_params.get('TOTAL_BENEFICIO_ACUMULADO', 0.0)
-                enviar_resumen_telegram(
-                    resumen_dict,
-                    binance_utils.obtener_saldo_moneda(client, "USDT"),
-                    bot_params.get('TOTAL_BENEFICIO_ACUMULADO', 0.0))
+                saldo_usdt_global = binance_utils.obtener_saldo_moneda(
+                    client, "USDT")
+                total_capital_usdt_global = binance_utils.get_total_capital_usdt(
+                    client, posiciones_abiertas)
+                eur_usdt_rate = binance_utils.obtener_precio_eur(client)
+                total_capital_eur_global = (
+                    total_capital_usdt_global / eur_usdt_rate
+                    if eur_usdt_rate and eur_usdt_rate > 0 else 0
+                )
 
-        # Esperar hasta siguiente ciclo
-        sleep_duration = max(0, INTERVALO - (time.time() - start_time_cycle))
-        print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
-        time.sleep(sleep_duration)
+                for symbol in SYMBOLS:
+                    base = symbol.replace("USDT", "")
+                    precio_actual = binance_utils.obtener_precio_actual(
+                        client, symbol)
+
+                # Indicadores
+                    ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
+                        client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
+                        EMA_LARGA_PERIODO, RSI_PERIODO)
+
+            # Tendencia
+                    if ema_c is None or ema_m is None or ema_l is None or rsi is None:
+                        continue
+                    tend_emoji = "📈"
+                    tend_text = "Alcista"
+                    if ema_l > ema_m > ema_c:
+                        tend_emoji = "📉"
+                        tend_text = "Bajista"
+                    elif abs(ema_l - ema_c) < 0.01 * ema_c:
+                        tend_emoji = "ǁ"
+                        tend_text = "Lateral/Consolidación"
+
+                    # Mensaje por símbolo
+                    msg = (
+                        f"📊 <b>{symbol}</b>\n"
+                        f"Precio actual: {precio_actual:.2f} USDT\n"
+                        f"EMA Corta ({EMA_CORTA_PERIODO}m): {ema_c:.2f}\n"
+                        f"EMA Media ({EMA_MEDIA_PERIODO}m): {ema_m:.2f}\n"
+                        f"EMA Larga ({EMA_LARGA_PERIODO}m): {ema_l:.2f}\n"
+                        f"RSI ({RSI_PERIODO}m): {rsi:.2f}\n"
+                        f"Tend: {tend_emoji} <b>{tend_text}</b>"
+                    )
+
+                    # Datos de posición
+                if symbol in posiciones_abiertas:
+                    pos = posiciones_abiertas[symbol]
+                    precio_entrada = pos['precio_compra']
+                    tp = precio_entrada * (1 + TAKE_PROFIT_PORCENTAJE)
+                    sl = pos.get('stop_loss_fijo_nivel_actual',
+                                 precio_entrada * (1 - STOP_LOSS_PORCENTAJE))
+                    max_alc = pos['max_precio_alcanzado']
+                    tsl = max_alc * (1 - TRAILING_STOP_PORCENTAJE)
+                    invertido = pos['cantidad_base'] * precio_entrada
+
+                    msg += (
+                        f"\nPosición:\n"
+                        f" Entrada: {precio_entrada:.2f} | Actual: {precio_actual:.2f}\n"
+                        f"TP: {tp:.2f} | SL Fijo: {sl:.2f}\n"
+                        f"Max Alcanzado: {max_alc:.2f} | TSL: {tsl:.2f}\n"
+                        f"Saldo USDT Invertido (Entrada): {invertido:.2f}\n"
+                    )
+                eur_invertido = invertido / (eur_usdt_rate or 1)
+                msg += f"SEI: {eur_invertido:.2f}"
+
+                msg += (
+                    f"\n💰 Saldo USDT: {saldo_usdt_global:.2f}\n"
+                    f"💲 Capital Total (USDT): {total_capital_usdt_global:.2f}\n"
+                    f"💶 Capital Total (EUR): {total_capital_eur_global:.2f}\n"
+                )
+            general_message += msg + "\n\n"
+
+            telegram_handler.send_telegram_message(
+                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
+            # Esperar hasta siguiente ciclo
+            sleep_duration = max(
+                0, INTERVALO - (time.time() - start_time_cycle))
+            print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
+            time.sleep(sleep_duration)
 
 except KeyboardInterrupt:
     logging.info("KeyboardInterrupt detectado. Terminando bot...")
