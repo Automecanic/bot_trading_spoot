@@ -781,7 +781,7 @@ try:
                         f"💲 Capital Total (USDT): {total_capital_usdt_global:.2f}\n"
                         f"💶 Capital Total (EUR): {total_capital_eur_global:.2f}\n"
                     )
-                general_message += msg + "\n\n"
+                    general_message += msg + "\n\n"
 
                 telegram_handler.send_telegram_message(
                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
