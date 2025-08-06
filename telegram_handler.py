@@ -12,6 +12,7 @@ import html  # Importa el módulo html para escapar caracteres HTML.
 import math  # Importa el módulo math para funciones como isnan e isinf.
 # Mover la importación aquí para que sea accesible globalmente en el módulo.
 import binance_utils
+import config_manager
 
 # Configura el sistema de registro básico para este módulo.
 # Esto asegura que los mensajes informativos, advertencias y errores se muestren en la consola del bot.
