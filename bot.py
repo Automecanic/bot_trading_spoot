@@ -756,15 +756,15 @@ try:
                     )
 
                     # Datos de posición
-                if symbol in posiciones_abiertas:
-                    pos = posiciones_abiertas[symbol]
-                    precio_entrada = pos['precio_compra']
-                    tp = precio_entrada * (1 + TAKE_PROFIT_PORCENTAJE)
-                    sl = pos.get('stop_loss_fijo_nivel_actual',
-                                 precio_entrada * (1 - STOP_LOSS_PORCENTAJE))
-                    max_alc = pos['max_precio_alcanzado']
-                    tsl = max_alc * (1 - TRAILING_STOP_PORCENTAJE)
-                    invertido = pos['cantidad_base'] * precio_entrada
+                    if symbol in posiciones_abiertas:
+                        pos = posiciones_abiertas[symbol]
+                        precio_entrada = pos['precio_compra']
+                        tp = precio_entrada * (1 + TAKE_PROFIT_PORCENTAJE)
+                        sl = pos.get('stop_loss_fijo_nivel_actual',
+                                     precio_entrada * (1 - STOP_LOSS_PORCENTAJE))
+                        max_alc = pos['max_precio_alcanzado']
+                        tsl = max_alc * (1 - TRAILING_STOP_PORCENTAJE)
+                        invertido = pos['cantidad_base'] * precio_entrada
 
                     msg += (
                         f"\nPosición:\n"
@@ -773,23 +773,23 @@ try:
                         f"Max Alcanzado: {max_alc:.2f} | TSL: {tsl:.2f}\n"
                         f"Saldo USDT Invertido (Entrada): {invertido:.2f}\n"
                     )
-                eur_invertido = invertido / (eur_usdt_rate or 1)
-                msg += f"SEI: {eur_invertido:.2f}"
+                    eur_invertido = invertido / (eur_usdt_rate or 1)
+                    msg += f"SEI: {eur_invertido:.2f}"
 
-                msg += (
-                    f"\n💰 Saldo USDT: {saldo_usdt_global:.2f}\n"
-                    f"💲 Capital Total (USDT): {total_capital_usdt_global:.2f}\n"
-                    f"💶 Capital Total (EUR): {total_capital_eur_global:.2f}\n"
-                )
-            general_message += msg + "\n\n"
+                    msg += (
+                        f"\n💰 Saldo USDT: {saldo_usdt_global:.2f}\n"
+                        f"💲 Capital Total (USDT): {total_capital_usdt_global:.2f}\n"
+                        f"💶 Capital Total (EUR): {total_capital_eur_global:.2f}\n"
+                    )
+                general_message += msg + "\n\n"
 
-            telegram_handler.send_telegram_message(
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
             # Esperar hasta siguiente ciclo
-            sleep_duration = max(
-                0, INTERVALO - (time.time() - start_time_cycle))
-            print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
-            time.sleep(sleep_duration)
+                sleep_duration = max(
+                    0, INTERVALO - (time.time() - start_time_cycle))
+                print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
+                time.sleep(sleep_duration)
 
 except KeyboardInterrupt:
     logging.info("KeyboardInterrupt detectado. Terminando bot...")
