@@ -727,12 +727,12 @@ try:
                     precio_actual = binance_utils.obtener_precio_actual(
                         client, symbol)
 
-                # Indicadores
+                    # Indicadores
                     ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
                         client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
                         EMA_LARGA_PERIODO, RSI_PERIODO)
 
-            # Tendencia
+                    # Tendencia
                     if ema_c is None or ema_m is None or ema_l is None or rsi is None:
                         continue
                     tend_emoji = "📈"
@@ -786,10 +786,10 @@ try:
                 telegram_handler.send_telegram_message(
                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
             # Esperar hasta siguiente ciclo
-                sleep_duration = max(
-                    0, INTERVALO - (time.time() - start_time_cycle))
-                print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
-                time.sleep(sleep_duration)
+            sleep_duration = max(
+                0, INTERVALO - (time.time() - start_time_cycle))
+            print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
+            time.sleep(sleep_duration)
 
 except KeyboardInterrupt:
     logging.info("KeyboardInterrupt detectado. Terminando bot...")
