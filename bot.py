@@ -647,13 +647,13 @@ def main():  # Define la función principal del bot.
                     # Cabecera del informe
                     general_message = (  # Inicializa el mensaje-resumen que se enviará por Telegram.
                         # Hora del ciclo en formato HH:MM:SS.
-                        f"📈 Resumen ciclo {datetime.now().strftime('%H:%M:%S')}"
+                        f"📈 Resumen ciclo {datetime.now().strftime('%H:%M:%S')}\n"
                         # Saldo USDT con 2 decimales.
-                        f"💰 USDT libre: {saldo_usdt_global:.2f}"
+                        f"💰 USDT libre: {saldo_usdt_global:.2f}\n"
                         # Capital total en USDT.
-                        f"💲 Total: {total_capital_usdt_global:.2f} USDT"
+                        f"💲 Total: {total_capital_usdt_global:.2f} USDT\n"
                         # Capital total en EUR.
-                        f"💶 Total: {total_capital_eur_global:.2f} EUR"
+                        f"💶 Total: {total_capital_eur_global:.2f} EUR\n\n"
                     )
 # ------------------------------------------------------------------
 #   Recorre todos los símbolos
@@ -921,14 +921,14 @@ def main():  # Define la función principal del bot.
 
                     msg = (  # Construye el bloque de texto para este símbolo.
                         # Muestra el símbolo en negrita (formato HTML/Telegram).
-                        f"📊 <b>{symbol}</b>"
+                        f"📊 <b>{symbol}</b>\n"
                         # Precio actual con 2 decimales.
-                        f"Precio: {precio_actual:.2f} USDT"
+                        f"Precio: {precio_actual:.2f} USDT\n"
                         # EMAs corta/media/larga.
-                        f"EMA: {ema_c:.2f} / {ema_m:.2f} / {ema_l:.2f}"
+                        f"EMA: {ema_c:.2f} / {ema_m:.2f} / {ema_l:.2f}\n"
                         f"RSI: {rsi:.2f}"  # RSI con 2 decimales.
                         # Emoji + descripción de tendencia.
-                        f"Tend: {tend_emoji} {tend_text}"
+                        f"Tend: {tend_emoji} {tend_text}\n"
                     )
                     # Si hay posición abierta, añade información de gestión.
                     if symbol in posiciones_abiertas:
@@ -936,21 +936,21 @@ def main():  # Define la función principal del bot.
                         pos = posiciones_abiertas[symbol]
                         msg += (  # Agrega métricas de la posición al mensaje.
                             # Precio de entrada.
-                            f"Posición: Entrada {pos['precio_compra']:.2f} | "
+                            f"Posición: Entrada {pos['precio_compra']:.2f} |   "
                             # Nivel de take-profit actual por porcentaje global.
-                            f"TP: {pos['precio_compra']*(1+TAKE_PROFIT_PORCENTAJE):.2f} | "
+                            f"TP: {pos['precio_compra']*(1+TAKE_PROFIT_PORCENTAJE):.2f} |   "
                             # Stop-loss fijo actual o calculado.
-                            f"SL: {pos.get('stop_loss_fijo_nivel_actual', pos['precio_compra']*(1-STOP_LOSS_PORCENTAJE)):.2f} | "
+                            f"SL: {pos.get('stop_loss_fijo_nivel_actual', pos['precio_compra']*(1-STOP_LOSS_PORCENTAJE)):.2f} |   "
                             # Máximo alcanzado desde la entrada.
-                            f"Max: {pos['max_precio_alcanzado']:.2f} | "
+                            f"Max: {pos['max_precio_alcanzado']:.2f} |   "
                             # Trailing stop estimado a partir del máximo.
-                            f"TSL: {pos['max_precio_alcanzado']*(1-TRAILING_STOP_PORCENTAJE):.2f}"
+                            f"TSL: {pos['max_precio_alcanzado']*(1-TRAILING_STOP_PORCENTAJE):.2f}\n\n"
                         )
                     else:  # Si no hay posición...
                         # Indica explícitamente que no se mantiene posición en este símbolo.
-                        msg += "Sin posición"
+                        msg += "Sin posición\n"
                     # Añade el bloque del símbolo al mensaje general, con una línea en blanco de separación.
-                    general_message += msg + ""
+                    general_message += msg + "\n"
 
  # 17. Envía el informe por Telegram
                 # Sección crítica antes de enviar (por si otro hilo también publicara).
