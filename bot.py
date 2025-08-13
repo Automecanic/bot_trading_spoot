@@ -577,7 +577,11 @@ def main():
             if (time.time() - last_trading_check_time) >= INTERVALO:
                 logging.info("Iniciando ciclo de trading principal...")
                 general_message = ""
-
+                # 1) Cabecera global solo una vez por ciclo
+                general_message = f"📈 Resumen ciclo {datetime.now().strftime('%H:%M:%S')}\n"
+                general_message += f"💰 USDT libre: {saldo_usdt_global:.2f}\n"
+                general_message += f"💲 Total: {total_capital_usdt_global:.2f} USDT\n"
+                general_message += f"💶 Total: {total_capital_eur_global:.2f} EUR\n\n"
                 # 9. Calcula saldos globales
                 with shared_data_lock:
                     saldo_usdt_global = binance_utils.obtener_saldo_moneda(
@@ -619,6 +623,7 @@ def main():
                             band_width_max=bot_params.get(
                                 'RANGO_BAND_WIDTH_MAX', 0.05)
                         )
+
                         if en_rango:
                             senal_rango = estrategia_rango(
                                 client, symbol, soporte, resistencia,
@@ -765,7 +770,24 @@ def main():
                                     config_manager.save_parameters(bot_params)
                                 if orden:
                                     general_message += f"🔴 VENTA {motivo} {symbol}\n"
-
+                msg = (
+                    f"📊 <b>{symbol}</b>\n"
+                    f"Precio: {precio_actual:.2f} USDT\n"
+                    f"EMA: {ema_c:.2f} / {ema_m:.2f} / {ema_l:.2f}\n"
+                    f"RSI: {rsi:.2f}\n"
+                    f"Tend: {tend_emoji} {tend_text}\n"
+                )
+                if symbol in posiciones_abiertas:
+                    pos = posiciones_abiertas[symbol]
+                    msg += (
+                        f"Posición: Entrada {pos['precio_compra']:.2f} | "
+                        f"TP: {pos['precio_compra']*(1+TAKE_PROFIT_PORCENTAJE):.2f} | "
+                        f"SL: {pos.get('stop_loss_fijo_nivel_actual', pos['precio_compra']*(1-STOP_LOSS_PORCENTAJE)):.2f}\n"
+                    )
+                else:
+                    msg += "Sin posición\n"
+                msg += "\n"
+                general_message += msg
                 # 15. ENVÍA el informe completo por Telegram
                 with shared_data_lock:
                     try:
