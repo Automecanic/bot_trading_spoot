@@ -50,7 +50,8 @@ OPEN_POSITIONS_FILE = "open_positions.json"
 bot_params = config_manager.load_parameters()
 
 # Parámetros clásicos
-SYMBOLS = ["BTCUSDT", "BNBUSDT", "XLMUSDT", "TRXUSDT", "ADAUSDT", "XRPUSDT"]
+SYMBOLS = ["BTCUSDT", "BNBUSDT", "XLMUSDT", "TRXUSDT",
+           "ADAUSDT", "XRPUSDT", "DOGEUSDT", "SOLUSDT", "ETHUSDT"]
 INTERVALO = bot_params["INTERVALO"]
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"]
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"]
@@ -69,9 +70,10 @@ RANGO_PERIODO_ANALISIS = bot_params.get("RANGO_PERIODO_ANALISIS", 20)
 RANGO_UMBRAL_ATR = bot_params.get("RANGO_UMBRAL_ATR", 0.015)
 RANGO_RSI_SOBREVENTA = bot_params.get("RANGO_RSI_SOBREVENTA", 30)
 RANGO_RSI_SOBRECOMPRA = bot_params.get("RANGO_RSI_SOBRECOMPRA", 70)
-
+PARAMS = bot_params.get("symbols", {})
 # Asegurar persistencia
 config_manager.save_parameters(bot_params)
+
 
 # ----------------- CLIENTE BINANCE -----------------
 client = Client(API_KEY, API_SECRET, testnet=True,
@@ -88,10 +90,24 @@ ultima_fecha_informe_enviado = None
 last_trading_check_time = 0
 shared_data_lock = threading.Lock()
 
+
+def cfg(symbol):
+    return PARAMS.get(symbol, {
+        "stop_loss_pct": 0.03,
+        "take_profit_pct": 0.05,
+        "trailing_stop_pct": 0.025,
+        "breakeven_pct": 0.01,
+        "rsi_buy": 35,
+        "rsi_sell": 65,
+        "volume_factor": 1.5,
+        "ema_fast": 9,
+        "ema_slow": 21
+    })
+
+
 # ------------------------------------------------------------------
 #  MANEJADOR DE COMANDOS TELEGRAM (completo) – incluye nuevos comandos
 # ------------------------------------------------------------------
-
 
 def handle_telegram_commands():
     """
@@ -465,134 +481,279 @@ def telegram_listener(stop_event):
         except Exception as e:
             logging.error(f"Error hilo Telegram: {e}")
 
+# ------------------------------------------------------------------
+#  FUNCIÓN INDICADORES (nueva)
+# ------------------------------------------------------------------
 
-# ----------------- INICIO -----------------
-telegram_handler.set_telegram_commands_menu(TELEGRAM_BOT_TOKEN)
-logging.info("Bot iniciado. Esperando comandos y monitoreando mercado...")
 
-telegram_stop_event = threading.Event()
-telegram_thread = threading.Thread(
-    target=telegram_listener, args=(telegram_stop_event,))
-telegram_thread.start()
+def indicadores(symbol):
+    """Retorna precio, rsi, ema9, ema21, vol_ratio"""
+    klines = client.get_klines(
+        symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=50)
+    closes = np.array([float(k[4]) for k in klines])
+    vols = np.array([float(k[5]) for k in klines])
+    rsi = talib.RSI(closes, timeperiod=14)[-1]
+    ema_fast = talib.EMA(closes, timeperiod=cfg(symbol)["ema_fast"])[-1]
+    ema_slow = talib.EMA(closes, timeperiod=cfg(symbol)["ema_slow"])[-1]
+    vol_ratio = vols[-1] / (np.mean(vols[-20:]) + 1e-8)
+    price = closes[-1]
+    return price, rsi, ema_fast, ema_slow, vol_ratio
 
-try:
-    while True:
-        start_time_cycle = time.time()
 
-        # --------- INFORME DIARIO ----------
-        hoy = time.strftime("%Y-%m-%d")
-        if ultima_fecha_informe_enviado is None or hoy != ultima_fecha_informe_enviado:
-            if ultima_fecha_informe_enviado is not None:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"📊 Preparando informe del día {ultima_fecha_informe_enviado}")
-                reporting_manager.generar_y_enviar_csv_ahora(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
-            ultima_fecha_informe_enviado = hoy
-            with shared_data_lock:
-                transacciones_diarias.clear()
+def main():
+    """
+    Función principal que inicia el bot y maneja el ciclo de trading.
+    """
+    global last_trading_check_time, ultima_fecha_informe_enviado
 
-        # --------- LIMPIEZA PROACTIVA ----------
-        with shared_data_lock:
-            symbols_to_remove = []
-            for symbol, data in list(posiciones_abiertas.items()):
-                if symbol not in SYMBOLS:
-                    symbols_to_remove.append(symbol)
-                    continue
-                base_asset = symbol.replace("USDT", "")
-                actual_balance = binance_utils.obtener_saldo_moneda(
-                    client, base_asset)
-                info = client.get_symbol_info(symbol)
-                min_qty = 0.0
-                for f in info['filters']:
-                    if f['filterType'] == 'LOT_SIZE':
-                        min_qty = float(f['minQty'])
-                        break
-                threshold = max(min_qty, 1e-8)
-                if actual_balance < threshold:
-                    symbols_to_remove.append(symbol)
-            for symbol in symbols_to_remove:
-                if symbol in posiciones_abiertas:
-                    del posiciones_abiertas[symbol]
-                    position_manager.save_open_positions_debounced(
-                        posiciones_abiertas)
+    # Iniciar el cliente de Binance
+    logging.info("Iniciando cliente Binance...")
+    client.ping()  # Verifica la conexión
+
+    # Cargar posiciones abiertas desde archivo
+    logging.info("Cargando posiciones abiertas...")
+    global posiciones_abiertas
+    posiciones_abiertas = position_manager.load_open_positions(
+        STOP_LOSS_PORCENTAJE)
+
+    # Iniciar el manejador de comandos Telegram
+    logging.info("Iniciando manejador de comandos Telegram...")
+    telegram_handler.set_telegram_commands_menu(TELEGRAM_BOT_TOKEN)
+    logging.info("Bot iniciado. Esperando comandos y monitoreando mercado...")
+
+    telegram_stop_event = threading.Event()
+    telegram_thread = threading.Thread(
+        target=telegram_listener, args=(telegram_stop_event,))
+    telegram_thread.start()
+
+    try:
+        while True:
+            start_time_cycle = time.time()
+
+            # --------- INFORME DIARIO ----------
+            hoy = time.strftime("%Y-%m-%d")
+            if ultima_fecha_informe_enviado is None or hoy != ultima_fecha_informe_enviado:
+                if ultima_fecha_informe_enviado is not None:
                     telegram_handler.send_telegram_message(
                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        f"🗑️ Posición {symbol} eliminada (saldo insuficiente)")
+                        f"📊 Preparando informe del día {ultima_fecha_informe_enviado}")
+                    reporting_manager.generar_y_enviar_csv_ahora(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                ultima_fecha_informe_enviado = hoy
+                with shared_data_lock:
+                    transacciones_diarias.clear()
 
-        # --------- CICLO DE TRADING ----------
-        if (time.time() - last_trading_check_time) >= INTERVALO:
-            logging.info("Iniciando ciclo de trading principal...")
-            general_message = ""
-
+            # --------- LIMPIEZA PROACTIVA ----------
             with shared_data_lock:
-                saldo_usdt_global = binance_utils.obtener_saldo_moneda(
-                    client, "USDT")
-                total_capital_usdt_global = binance_utils.get_total_capital_usdt(
-                    client, posiciones_abiertas)
-                eur_usdt_rate = binance_utils.obtener_precio_eur(client)
-                total_capital_eur_global = (
-                    total_capital_usdt_global / eur_usdt_rate
-                    if eur_usdt_rate and eur_usdt_rate > 0 else 0
-                )
+                symbols_to_remove = []
+                for symbol, data in list(posiciones_abiertas.items()):
+                    if symbol not in SYMBOLS:
+                        symbols_to_remove.append(symbol)
+                        continue
+                    base_asset = symbol.replace("USDT", "")
+                    actual_balance = binance_utils.obtener_saldo_moneda(
+                        client, base_asset)
+                    info = client.get_symbol_info(symbol)
+                    min_qty = 0.0
+                    for f in info['filters']:
+                        if f['filterType'] == 'LOT_SIZE':
+                            min_qty = float(f['minQty'])
+                            break
+                    threshold = max(min_qty, 1e-8)
+                    if actual_balance < threshold:
+                        symbols_to_remove.append(symbol)
+                for symbol in symbols_to_remove:
+                    if symbol in posiciones_abiertas:
+                        del posiciones_abiertas[symbol]
+                        position_manager.save_open_positions_debounced(
+                            posiciones_abiertas)
+                        telegram_handler.send_telegram_message(
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                            f"🗑️ Posición {symbol} eliminada (saldo insuficiente)")
 
-            for symbol in SYMBOLS:
-                base = symbol.replace("USDT", "")
-                saldo_base = binance_utils.obtener_saldo_moneda(client, base)
-                precio_actual = binance_utils.obtener_precio_actual(
-                    client, symbol)
+            # --------- CICLO DE TRADING ----------
+            if (time.time() - last_trading_check_time) >= INTERVALO:
+                logging.info("Iniciando ciclo de trading principal...")
+                general_message = ""
 
-                # ----------------------------------
-                # DETECCIÓN Y OPERACIÓN EN RANGO
-                # ----------------------------------
-                rango_activo = bot_params.get('RANGO_OPERAR', True)
-                if rango_activo:
-                    en_rango, soporte, resistencia = detectar_rango_lateral(
-                        client,
-                        symbol,
-                        periodo=bot_params.get('RANGO_PERIODO_ANALISIS', 20),
-                        adx_umbral=bot_params.get('RANGO_ADX_UMBRAL', 25),
-                        band_width_max=bot_params.get(
-                            'RANGO_BAND_WIDTH_MAX', 0.05)
+                with shared_data_lock:
+                    saldo_usdt_global = binance_utils.obtener_saldo_moneda(
+                        client, "USDT")
+                    total_capital_usdt_global = binance_utils.get_total_capital_usdt(
+                        client, posiciones_abiertas)
+                    eur_usdt_rate = binance_utils.obtener_precio_eur(client)
+                    total_capital_eur_global = (
+                        total_capital_usdt_global / eur_usdt_rate
+                        if eur_usdt_rate and eur_usdt_rate > 0 else 0
                     )
-                    if en_rango:
-                        # Operar en rango lateral
-                        senal_rango = estrategia_rango(
+
+                for symbol in SYMBOLS:
+                    base = symbol.replace("USDT", "")
+                    saldo_base = binance_utils.obtener_saldo_moneda(
+                        client, base)
+                    precio_actual = binance_utils.obtener_precio_actual(
+                        client, symbol)
+
+                    # ---------- PARÁMETROS POR SÍMBOLO ----------
+                    cf = bot_params.get("symbols", {}).get(symbol, {
+                        "stop_loss_pct": STOP_LOSS_PORCENTAJE,
+                        "take_profit_pct": TAKE_PROFIT_PORCENTAJE,
+                        "trailing_stop_pct": TRAILING_STOP_PORCENTAJE,
+                        "breakeven_pct": BREAKEVEN_PORCENTAJE,
+                        "rsi_buy": RSI_UMBRAL_SOBRECOMPRA,
+                        "volume_factor": 1.5,
+                        "ema_fast": EMA_CORTA_PERIODO,
+                        "ema_slow": EMA_MEDIA_PERIODO
+                    })
+
+                    # ----------------------------------
+                    # DETECCIÓN Y OPERACIÓN EN RANGO
+                    # ----------------------------------
+                    rango_activo = bot_params.get('RANGO_OPERAR', True)
+                    if rango_activo:
+                        en_rango, soporte, resistencia = detectar_rango_lateral(
                             client,
                             symbol,
-                            soporte,
-                            resistencia,
-                            rsi=trading_logic.calcular_ema_rsi(
-                                client, symbol,
-                                EMA_CORTA_PERIODO,
-                                EMA_MEDIA_PERIODO,
-                                EMA_LARGA_PERIODO,
-                                RSI_PERIODO
-                            )[3],  # RSI
-                            rsi_sobreventa=bot_params.get(
-                                'RANGO_RSI_SOBREVENTA', 30),
-                            rsi_sobrecompra=bot_params.get(
-                                'RANGO_RSI_SOBRECOMPRA', 70)
+                            periodo=bot_params.get(
+                                'RANGO_PERIODO_ANALISIS', 20),
+                            adx_umbral=bot_params.get('RANGO_ADX_UMBRAL', 25),
+                            band_width_max=bot_params.get(
+                                'RANGO_BAND_WIDTH_MAX', 0.05)
                         )
-                        if senal_rango == 'COMPRA' and symbol not in posiciones_abiertas and saldo_usdt_global > 10:
-                            cantidad = trading_logic.calcular_cantidad_a_comprar(
-                                client, saldo_usdt_global, precio_actual,
-                                STOP_LOSS_PORCENTAJE, symbol,
-                                RIESGO_POR_OPERACION_PORCENTAJE, total_capital_usdt_global
+                        if en_rango:
+                            senal_rango = estrategia_rango(
+                                client,
+                                symbol,
+                                soporte,
+                                resistencia,
+                                rsi=trading_logic.calcular_ema_rsi(
+                                    client, symbol,
+                                    EMA_CORTA_PERIODO,
+                                    EMA_MEDIA_PERIODO,
+                                    EMA_LARGA_PERIODO,
+                                    RSI_PERIODO
+                                )[3],
+                                rsi_sobreventa=bot_params.get(
+                                    'RANGO_RSI_SOBREVENTA', 30),
+                                rsi_sobrecompra=bot_params.get(
+                                    'RANGO_RSI_SOBRECOMPRA', 70)
                             )
-                            if cantidad > 0:
-                                with shared_data_lock:
-                                    orden = trading_logic.comprar(
-                                        client, symbol, cantidad, posiciones_abiertas,
-                                        STOP_LOSS_PORCENTAJE, transacciones_diarias,
-                                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                                        OPEN_POSITIONS_FILE
-                                    )
-                                if orden:
-                                    general_message += f"🟢 COMPRA RANGO {symbol}\n"
-                                continue
+                            if senal_rango == 'COMPRA' and symbol not in posiciones_abiertas and saldo_usdt_global > 10:
+                                cantidad = trading_logic.calcular_cantidad_a_comprar(
+                                    client, saldo_usdt_global, precio_actual,
+                                    cf["stop_loss_pct"], symbol,
+                                    RIESGO_POR_OPERACION_PORCENTAJE, total_capital_usdt_global
+                                )
+                                if cantidad > 0:
+                                    with shared_data_lock:
+                                        orden = trading_logic.comprar(
+                                            client, symbol, cantidad, posiciones_abiertas,
+                                            cf["stop_loss_pct"], transacciones_diarias,
+                                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                                            OPEN_POSITIONS_FILE
+                                        )
+                                    if orden:
+                                        general_message += f"🟢 COMPRA RANGO {symbol}\n"
+                                    continue
 
-                        elif senal_rango == 'VENTA' and symbol in posiciones_abiertas:
+                            elif senal_rango == 'VENTA' and symbol in posiciones_abiertas:
+                                cantidad_vender = binance_utils.ajustar_cantidad(
+                                    binance_utils.obtener_saldo_moneda(
+                                        client, base),
+                                    binance_utils.get_step_size(client, symbol)
+                                )
+                                if cantidad_vender > 0:
+                                    with shared_data_lock:
+                                        orden = trading_logic.vender(
+                                            client, symbol, cantidad_vender,
+                                            posiciones_abiertas,
+                                            bot_params.get(
+                                                'TOTAL_BENEFICIO_ACUMULADO', 0.0),
+                                            bot_params, transacciones_diarias,
+                                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                                            OPEN_POSITIONS_FILE, config_manager,
+                                            motivo_venta="VENTA EN RANGO"
+                                        )
+                                        bot_params['TOTAL_BENEFICIO_ACUMULADO'] = bot_params.get(
+                                            'TOTAL_BENEFICIO_ACUMULADO', 0.0)
+                                        config_manager.save_parameters(
+                                            bot_params)
+                                    if orden:
+                                        general_message += f"🔴 VENTA RANGO {symbol}\n"
+                                    continue
+
+                    # ----------------------------------
+                    # OPERACIÓN EN TENDENCIA
+                    # ----------------------------------
+                    ema_corta, ema_media, ema_larga, rsi = trading_logic.calcular_ema_rsi(
+                        client, symbol,
+                        cf["ema_fast"],
+                        cf["ema_slow"],
+                        EMA_LARGA_PERIODO,
+                        RSI_PERIODO
+                    )
+                    if any(v is None for v in (ema_corta, ema_media, ema_larga, rsi)):
+                        continue
+
+                    # Filtro de volumen
+                    klines = client.get_klines(
+                        symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=20)
+                    vol_ratio = float(
+                        klines[-1][5]) / (sum(float(k[5]) for k in klines[-20:]) / 20 + 1e-8)
+
+                    tendencia_alcista = (
+                        precio_actual > ema_corta > ema_media > ema_larga)
+
+                    comprar_cond = (
+                        saldo_usdt_global > 10 and
+                        tendencia_alcista and
+                        rsi < cf["rsi_buy"] and
+                        vol_ratio > cf["volume_factor"] and
+                        symbol not in posiciones_abiertas
+                    )
+                    if comprar_cond:
+                        cantidad = trading_logic.calcular_cantidad_a_comprar(
+                            client, saldo_usdt_global, precio_actual,
+                            cf["stop_loss_pct"], symbol,
+                            RIESGO_POR_OPERACION_PORCENTAJE, total_capital_usdt_global
+                        )
+                        if cantidad > 0:
+                            with shared_data_lock:
+                                orden = trading_logic.comprar(
+                                    client, symbol, cantidad, posiciones_abiertas,
+                                    cf["stop_loss_pct"], transacciones_diarias,
+                                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                                    OPEN_POSITIONS_FILE
+                                )
+                            if orden:
+                                general_message += f"✅ COMPRA TENDENCIA {symbol}\n"
+
+                    elif symbol in posiciones_abiertas:
+                        pos = posiciones_abiertas[symbol]
+                        precio_compra = pos['precio_compra']
+                        max_precio_alcanzado = pos['max_precio_alcanzado']
+                        sl_actual = pos.get('stop_loss_fijo_nivel_actual',
+                                            precio_compra * (1 - cf["stop_loss_pct"]))
+                        tp = precio_compra * (1 + cf["take_profit_pct"])
+                        tsl = max_precio_alcanzado * \
+                            (1 - cf["trailing_stop_pct"])
+
+                        if precio_actual > max_precio_alcanzado:
+                            with shared_data_lock:
+                                posiciones_abiertas[symbol]['max_precio_alcanzado'] = precio_actual
+                                position_manager.save_open_positions_debounced(
+                                    posiciones_abiertas)
+
+                        vender_ahora = False
+                        motivo = ""
+                        if precio_actual >= tp:
+                            vender_ahora, motivo = True, "TAKE PROFIT"
+                        elif precio_actual <= sl_actual:
+                            vender_ahora, motivo = True, "STOP LOSS"
+                        elif precio_actual <= tsl and precio_actual > precio_compra:
+                            vender_ahora, motivo = True, "TRAILING STOP"
+
+                        if vender_ahora:
                             cantidad_vender = binance_utils.ajustar_cantidad(
                                 binance_utils.obtener_saldo_moneda(
                                     client, base),
@@ -608,198 +769,115 @@ try:
                                         bot_params, transacciones_diarias,
                                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                                         OPEN_POSITIONS_FILE, config_manager,
-                                        motivo_venta="VENTA EN RANGO"
+                                        motivo
                                     )
                                     bot_params['TOTAL_BENEFICIO_ACUMULADO'] = bot_params.get(
                                         'TOTAL_BENEFICIO_ACUMULADO', 0.0)
                                     config_manager.save_parameters(bot_params)
                                 if orden:
-                                    general_message += f"🔴 VENTA RANGO {symbol}\n"
-                                continue
+                                    general_message += f"🔴 VENTA {motivo} {symbol}\n"
 
-                # ----------------------------------
-                # OPERACIÓN EN TENDENCIA (original)
-                # ----------------------------------
-                ema_corta, ema_media, ema_larga, rsi = trading_logic.calcular_ema_rsi(
-                    client, symbol,
-                    EMA_CORTA_PERIODO,
-                    EMA_MEDIA_PERIODO,
-                    EMA_LARGA_PERIODO,
-                    RSI_PERIODO
-                )
-                if any(v is None for v in (ema_corta, ema_media, ema_larga, rsi)):
-                    continue
-
-                # Criterio de tendencia alcista
-                tendencia_alcista = (
-                    precio_actual > ema_corta > ema_media > ema_larga
-                )
-
-                # COMPRA en tendencia
-                comprar_cond = (
-                    saldo_usdt_global > 10 and
-                    tendencia_alcista and
-                    rsi < RSI_UMBRAL_SOBRECOMPRA and
-                    symbol not in posiciones_abiertas
-                )
-                if comprar_cond:
-                    cantidad = trading_logic.calcular_cantidad_a_comprar(
-                        client, saldo_usdt_global, precio_actual,
-                        STOP_LOSS_PORCENTAJE, symbol,
-                        RIESGO_POR_OPERACION_PORCENTAJE, total_capital_usdt_global
+                # Resumen enviado por Telegram
+                # Construimos el resumen compacto
+                # ---------- CONSTRUIR resumen_dict SIEMPRE COMPLETO ----------
+                # ---------- ENVÍO DEL INFORME DETALLADO POR SÍMBOLO ----------
+                general_message = ""
+                with shared_data_lock:
+                    saldo_usdt_global = binance_utils.obtener_saldo_moneda(
+                        client, "USDT")
+                    total_capital_usdt_global = binance_utils.get_total_capital_usdt(
+                        client, posiciones_abiertas)
+                    eur_usdt_rate = binance_utils.obtener_precio_eur(client)
+                    total_capital_eur_global = (
+                        total_capital_usdt_global / eur_usdt_rate
+                        if eur_usdt_rate and eur_usdt_rate > 0 else 0
                     )
-                    if cantidad > 0:
-                        with shared_data_lock:
-                            orden = trading_logic.comprar(
-                                client, symbol, cantidad, posiciones_abiertas,
-                                STOP_LOSS_PORCENTAJE, transacciones_diarias,
-                                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                                OPEN_POSITIONS_FILE
-                            )
-                        if orden:
-                            general_message += f"✅ COMPRA TENDENCIA {symbol}\n"
 
-                # VENTA en tendencia
-                elif symbol in posiciones_abiertas:
-                    pos = posiciones_abiertas[symbol]
-                    precio_compra = pos['precio_compra']
-                    max_precio_alcanzado = pos['max_precio_alcanzado']
-                    sl_actual = pos.get('stop_loss_fijo_nivel_actual',
-                                        precio_compra * (1 - STOP_LOSS_PORCENTAJE))
+                    for symbol in SYMBOLS:
+                        base = symbol.replace("USDT", "")
+                        precio_actual = binance_utils.obtener_precio_actual(
+                            client, symbol)
 
-                    if precio_actual > max_precio_alcanzado:
-                        with shared_data_lock:
-                            posiciones_abiertas[symbol]['max_precio_alcanzado'] = precio_actual
-                            position_manager.save_open_positions_debounced(
-                                posiciones_abiertas)
+                        # Indicadores
+                        ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
+                            client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
+                            EMA_LARGA_PERIODO, RSI_PERIODO)
 
-                    vender_ahora = False
-                    motivo = ""
-                    if precio_actual >= precio_compra * (1 + TAKE_PROFIT_PORCENTAJE):
-                        vender_ahora, motivo = True, "TAKE PROFIT"
-                    elif precio_actual <= sl_actual:
-                        vender_ahora, motivo = True, "STOP LOSS"
-                    elif (precio_actual <= max_precio_alcanzado * (1 - TRAILING_STOP_PORCENTAJE)
-                          and precio_actual > precio_compra):
-                        vender_ahora, motivo = True, "TRAILING STOP"
+                        # Tendencia
+                        if ema_c is None or ema_m is None or ema_l is None or rsi is None:
+                            continue
+                        tend_emoji = "📈"
+                        tend_text = "Alcista"
+                        if ema_l > ema_m > ema_c:
+                            tend_emoji = "📉"
+                            tend_text = "Bajista"
+                        elif abs(ema_l - ema_c) < 0.01 * ema_c:
+                            tend_emoji = "ǁ"
+                            tend_text = "Lateral/Consolidación"
 
-                    if vender_ahora:
-                        cantidad_vender = binance_utils.ajustar_cantidad(
-                            binance_utils.obtener_saldo_moneda(client, base),
-                            binance_utils.get_step_size(client, symbol)
+                        # Mensaje por símbolo
+                        msg = (
+                            f"📊 <b>{symbol}</b>\n"
+                            f"Precio actual: {precio_actual:.2f} USDT\n"
+                            f"EMA Corta ({EMA_CORTA_PERIODO}m): {ema_c:.2f}\n"
+                            f"EMA Media ({EMA_MEDIA_PERIODO}m): {ema_m:.2f}\n"
+                            f"EMA Larga ({EMA_LARGA_PERIODO}m): {ema_l:.2f}\n"
+                            f"RSI ({RSI_PERIODO}m): {rsi:.2f}\n"
+                            f"Tend: {tend_emoji} <b>{tend_text}</b>"
                         )
-                        if cantidad_vender > 0:
-                            with shared_data_lock:
-                                orden = trading_logic.vender(
-                                    client, symbol, cantidad_vender,
-                                    posiciones_abiertas,
-                                    bot_params.get(
-                                        'TOTAL_BENEFICIO_ACUMULADO', 0.0),
-                                    bot_params, transacciones_diarias,
-                                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                                    OPEN_POSITIONS_FILE, config_manager,
-                                    motivo
-                                )
-                                bot_params['TOTAL_BENEFICIO_ACUMULADO'] = bot_params.get(
-                                    'TOTAL_BENEFICIO_ACUMULADO', 0.0)
-                                config_manager.save_parameters(bot_params)
-                            if orden:
-                                general_message += f"🔴 VENTA {motivo} {symbol}\n"
 
-            # Resumen enviado por Telegram
-            # Construimos el resumen compacto
-            # ---------- CONSTRUIR resumen_dict SIEMPRE COMPLETO ----------
-            # ---------- ENVÍO DEL INFORME DETALLADO POR SÍMBOLO ----------
-            general_message = ""
-            with shared_data_lock:
-                saldo_usdt_global = binance_utils.obtener_saldo_moneda(
-                    client, "USDT")
-                total_capital_usdt_global = binance_utils.get_total_capital_usdt(
-                    client, posiciones_abiertas)
-                eur_usdt_rate = binance_utils.obtener_precio_eur(client)
-                total_capital_eur_global = (
-                    total_capital_usdt_global / eur_usdt_rate
-                    if eur_usdt_rate and eur_usdt_rate > 0 else 0
-                )
+                        # Datos de posición
+                        if symbol in posiciones_abiertas:
+                            pos = posiciones_abiertas[symbol]
+                            precio_entrada = pos['precio_compra']
+                            tp = precio_entrada * (1 + TAKE_PROFIT_PORCENTAJE)
+                            sl = pos.get('stop_loss_fijo_nivel_actual',
+                                         precio_entrada * (1 - STOP_LOSS_PORCENTAJE))
+                            max_alc = pos['max_precio_alcanzado']
+                            tsl = max_alc * (1 - TRAILING_STOP_PORCENTAJE)
+                            invertido = pos['cantidad_base'] * precio_entrada
 
-                for symbol in SYMBOLS:
-                    base = symbol.replace("USDT", "")
-                    precio_actual = binance_utils.obtener_precio_actual(
-                        client, symbol)
+                        msg += (
+                            f"\nPosición:\n"
+                            f" Entrada: {precio_entrada:.2f} | Actual: {precio_actual:.2f}\n"
+                            f"TP: {tp:.2f} | SL Fijo: {sl:.2f}\n"
+                            f"Max Alcanzado: {max_alc:.2f} | TSL: {tsl:.2f}\n"
+                            f"Saldo USDT Invertido (Entrada): {invertido:.2f}\n"
+                        )
+                        eur_invertido = invertido / (eur_usdt_rate or 1)
+                        msg += f"SEI: {eur_invertido:.2f}"
 
-                    # Indicadores
-                    ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
-                        client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
-                        EMA_LARGA_PERIODO, RSI_PERIODO)
+                        msg += (
+                            f"\n💰 Saldo USDT: {saldo_usdt_global:.2f}\n"
+                            f"💲 Capital Total (USDT): {total_capital_usdt_global:.2f}\n"
+                            f"💶 Capital Total (EUR): {total_capital_eur_global:.2f}\n"
+                        )
+                        general_message += msg + "\n\n"
 
-                    # Tendencia
-                    if ema_c is None or ema_m is None or ema_l is None or rsi is None:
-                        continue
-                    tend_emoji = "📈"
-                    tend_text = "Alcista"
-                    if ema_l > ema_m > ema_c:
-                        tend_emoji = "📉"
-                        tend_text = "Bajista"
-                    elif abs(ema_l - ema_c) < 0.01 * ema_c:
-                        tend_emoji = "ǁ"
-                        tend_text = "Lateral/Consolidación"
+                    telegram_handler.send_telegram_message(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
+                # Esperar hasta siguiente ciclo
+                sleep_duration = max(
+                    0, INTERVALO - (time.time() - start_time_cycle))
+                print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
+                time.sleep(sleep_duration)
 
-                    # Mensaje por símbolo
-                    msg = (
-                        f"📊 <b>{symbol}</b>\n"
-                        f"Precio actual: {precio_actual:.2f} USDT\n"
-                        f"EMA Corta ({EMA_CORTA_PERIODO}m): {ema_c:.2f}\n"
-                        f"EMA Media ({EMA_MEDIA_PERIODO}m): {ema_m:.2f}\n"
-                        f"EMA Larga ({EMA_LARGA_PERIODO}m): {ema_l:.2f}\n"
-                        f"RSI ({RSI_PERIODO}m): {rsi:.2f}\n"
-                        f"Tend: {tend_emoji} <b>{tend_text}</b>"
-                    )
+    except KeyboardInterrupt:
+        logging.info("KeyboardInterrupt detectado. Terminando bot...")
+        telegram_stop_event.set()
+        telegram_thread.join()
+    except Exception as e:
+        logging.error(f"Error crítico en bot.py: {e}", exc_info=True)
+        with shared_data_lock:
+            telegram_handler.send_telegram_message(
+                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                f"❌ Error crítico: {e}\n{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
+        telegram_stop_event.set()
+        telegram_thread.join()
 
-                    # Datos de posición
-                    if symbol in posiciones_abiertas:
-                        pos = posiciones_abiertas[symbol]
-                        precio_entrada = pos['precio_compra']
-                        tp = precio_entrada * (1 + TAKE_PROFIT_PORCENTAJE)
-                        sl = pos.get('stop_loss_fijo_nivel_actual',
-                                     precio_entrada * (1 - STOP_LOSS_PORCENTAJE))
-                        max_alc = pos['max_precio_alcanzado']
-                        tsl = max_alc * (1 - TRAILING_STOP_PORCENTAJE)
-                        invertido = pos['cantidad_base'] * precio_entrada
 
-                    msg += (
-                        f"\nPosición:\n"
-                        f" Entrada: {precio_entrada:.2f} | Actual: {precio_actual:.2f}\n"
-                        f"TP: {tp:.2f} | SL Fijo: {sl:.2f}\n"
-                        f"Max Alcanzado: {max_alc:.2f} | TSL: {tsl:.2f}\n"
-                        f"Saldo USDT Invertido (Entrada): {invertido:.2f}\n"
-                    )
-                    eur_invertido = invertido / (eur_usdt_rate or 1)
-                    msg += f"SEI: {eur_invertido:.2f}"
-
-                    msg += (
-                        f"\n💰 Saldo USDT: {saldo_usdt_global:.2f}\n"
-                        f"💲 Capital Total (USDT): {total_capital_usdt_global:.2f}\n"
-                        f"💶 Capital Total (EUR): {total_capital_eur_global:.2f}\n"
-                    )
-                    general_message += msg + "\n\n"
-
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
-            # Esperar hasta siguiente ciclo
-            sleep_duration = max(
-                0, INTERVALO - (time.time() - start_time_cycle))
-            print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
-            time.sleep(sleep_duration)
-
-except KeyboardInterrupt:
-    logging.info("KeyboardInterrupt detectado. Terminando bot...")
-    telegram_stop_event.set()
-    telegram_thread.join()
-except Exception as e:
-    logging.error(f"Error crítico en bot.py: {e}", exc_info=True)
-    with shared_data_lock:
-        telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-            f"❌ Error crítico: {e}\n{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
-    telegram_stop_event.set()
-    telegram_thread.join()
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info("Iniciando bot de trading...")
+    main()

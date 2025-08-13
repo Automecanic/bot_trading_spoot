@@ -1,0 +1,116 @@
+{
+    "risk_management": {
+        "max_risk_per_trade_pct": 1.5,
+        "position_sizing_formula": "(risk_usd / stop_loss_pct) / price"
+    },
+    "symbols": {
+        "ADAUSDT": {
+            "stop_loss_pct": 0.028,
+            "take_profit_1": 0.045,
+            "take_profit_2": 0.09,
+            "trailing_stop_pct": 0.02,
+            "trailing_activation_pct": 0.03,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "XRPUSDT": {
+            "stop_loss_pct": 0.031,
+            "take_profit_1": 0.052,
+            "take_profit_2": 0.10,
+            "trailing_stop_pct": 0.025,
+            "trailing_activation_pct": 0.04,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "DOGEUSDT": {
+            "stop_loss_pct": 0.035,
+            "take_profit_1": 0.06,
+            "take_profit_2": 0.12,
+            "trailing_stop_pct": 0.03,
+            "trailing_activation_pct": 0.05,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "SOLUSDT": {
+            "stop_loss_pct": 0.029,
+            "take_profit_1": 0.055,
+            "take_profit_2": 0.11,
+            "trailing_stop_pct": 0.025,
+            "trailing_activation_pct": 0.04,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "BNBUSDT": {
+            "stop_loss_pct": 0.025,
+            "take_profit_1": 0.042,
+            "take_profit_2": 0.085,
+            "trailing_stop_pct": 0.02,
+            "trailing_activation_pct": 0.03,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "ETHUSDT": {
+            "stop_loss_pct": 0.026,
+            "take_profit_1": 0.048,
+            "take_profit_2": 0.095,
+            "trailing_stop_pct": 0.02,
+            "trailing_activation_pct": 0.035,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "BTCUSDT": {
+            "stop_loss_pct": 0.024,
+            "take_profit_1": 0.04,
+            "take_profit_2": 0.08,
+            "trailing_stop_pct": 0.02,
+            "trailing_activation_pct": 0.03,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "XLMUSDT": {
+            "stop_loss_pct": 0.03,
+            "take_profit_1": 0.05,
+            "take_profit_2": 0.10,
+            "trailing_stop_pct": 0.025,
+            "trailing_activation_pct": 0.04,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        },
+        "TRXUSDT": {
+            "stop_loss_pct": 0.032,
+            "take_profit_1": 0.055,
+            "take_profit_2": 0.11,
+            "trailing_stop_pct": 0.025,
+            "trailing_activation_pct": 0.04,
+            "rsi_buy": 35,
+            "rsi_sell": 65,
+            "volume_threshold": 1.5,
+            "ema_fast": 9,
+            "ema_slow": 21
+        }
+    }
+}
