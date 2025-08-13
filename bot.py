@@ -572,20 +572,13 @@ def main():
                         telegram_handler.send_telegram_message(
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                             f"🗑️ Posición {symbol} eliminada (saldo insuficiente)")
-
+            general_message = ""
             # 8. Solo ejecuta el ciclo si ha pasado INTERVALO segundos
             if (time.time() - last_trading_check_time) >= INTERVALO:
                 logging.info("Iniciando ciclo de trading principal...")
-                general_message = ""
-                # 1) Cabecera global solo una vez por ciclo
-                general_message = f"📈 Resumen ciclo {datetime.now().strftime('%H:%M:%S')}\n"
-                general_message += f"💰 USDT libre: {saldo_usdt_global:.2f}\n"
-                general_message += f"💲 Total: {total_capital_usdt_global:.2f} USDT\n"
-                general_message += f"💶 Total: {total_capital_eur_global:.2f} EUR\n\n"
-                # 9. Calcula saldos globales
                 with shared_data_lock:
-                    saldo_usdt_global = binance_utils.obtener_saldo_moneda(
-                        client, "USDT")
+                    # saldo_usdt_global = binance_utils.obtener_saldo_moneda(
+                    #   client, "USDT")
                     total_capital_usdt_global = binance_utils.get_total_capital_usdt(
                         client, posiciones_abiertas)
                     eur_usdt_rate = binance_utils.obtener_precio_eur(client)
@@ -593,6 +586,16 @@ def main():
                         total_capital_usdt_global / eur_usdt_rate
                         if eur_usdt_rate and eur_usdt_rate > 0 else 0
                     )
+
+                # 1) Cabecera global solo una vez por ciclo
+                # Cabecera del informe
+                    general_message = (
+                        f"📈 Resumen ciclo {datetime.now().strftime('%H:%M:%S')}\n"
+                        f"💰 USDT libre: {saldo_usdt_global:.2f}\n"
+                        f"💲 Total: {total_capital_usdt_global:.2f} USDT\n"
+                        f"💶 Total: {total_capital_eur_global:.2f} EUR\n\n"
+                    )
+                # 9. Calcula saldos globales
 
                 # 10. Por cada símbolo
                 for symbol in SYMBOLS:
