@@ -854,8 +854,11 @@ def main():
                         )
                         general_message += msg + "\n\n"
 
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
+                    try:
+                        telegram_handler.send_telegram_message(
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
+                    except Exception as e:
+                        logging.error(f"Fallo al enviar informe: {e}")
                 # Esperar hasta siguiente ciclo
                 sleep_duration = max(
                     0, INTERVALO - (time.time() - start_time_cycle))
