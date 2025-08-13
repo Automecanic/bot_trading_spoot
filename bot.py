@@ -527,12 +527,11 @@ def main():
         target=telegram_listener, args=(telegram_stop_event,))
     telegram_thread.start()
 
-    # 5. Bucle infinito
     try:
         while True:
             start_time_cycle = time.time()
 
-            # 6. Informe diario (solo cuando cambia el día)
+            # 5. Informe diario CSV (solo cuando cambia el día)
             hoy = time.strftime("%Y-%m-%d")
             if ultima_fecha_informe_enviado is None or hoy != ultima_fecha_informe_enviado:
                 if ultima_fecha_informe_enviado is not None:
@@ -545,7 +544,7 @@ def main():
                 with shared_data_lock:
                     transacciones_diarias.clear()
 
-            # 7. Elimina símbolos con saldo insuficiente
+            # 6. Limpia posiciones con saldo insuficiente
             with shared_data_lock:
                 symbols_to_remove = []
                 for symbol, data in list(posiciones_abiertas.items()):
@@ -572,13 +571,15 @@ def main():
                         telegram_handler.send_telegram_message(
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                             f"🗑️ Posición {symbol} eliminada (saldo insuficiente)")
-            general_message = ""
-            # 8. Solo ejecuta el ciclo si ha pasado INTERVALO segundos
+
+            # 7. Solo ejecuta el ciclo si ha pasado INTERVALO segundos
             if (time.time() - last_trading_check_time) >= INTERVALO:
                 logging.info("Iniciando ciclo de trading principal...")
+
+                # 8. Datos globales (siempre disponibles)
                 with shared_data_lock:
-                    # saldo_usdt_global = binance_utils.obtener_saldo_moneda(
-                    #   client, "USDT")
+                    saldo_usdt_global = binance_utils.obtener_saldo_moneda(
+                        client, "USDT")
                     total_capital_usdt_global = binance_utils.get_total_capital_usdt(
                         client, posiciones_abiertas)
                     eur_usdt_rate = binance_utils.obtener_precio_eur(client)
@@ -587,23 +588,21 @@ def main():
                         if eur_usdt_rate and eur_usdt_rate > 0 else 0
                     )
 
-                # 1) Cabecera global solo una vez por ciclo
-                # Cabecera del informe
+                    # Cabecera del informe
                     general_message = (
                         f"📈 Resumen ciclo {datetime.now().strftime('%H:%M:%S')}\n"
                         f"💰 USDT libre: {saldo_usdt_global:.2f}\n"
                         f"💲 Total: {total_capital_usdt_global:.2f} USDT\n"
                         f"💶 Total: {total_capital_eur_global:.2f} EUR\n\n"
                     )
-                # 9. Calcula saldos globales
 
-                # 10. Por cada símbolo
+                # 9. Recorre todos los símbolos
                 for symbol in SYMBOLS:
                     base = symbol.replace("USDT", "")
                     precio_actual = binance_utils.obtener_precio_actual(
                         client, symbol)
 
-                    # 11. Parámetros dinámicos
+                    # 10. Parámetros personalizados por símbolo
                     cf = bot_params.get("symbols", {}).get(symbol, {
                         "stop_loss_pct": STOP_LOSS_PORCENTAJE,
                         "take_profit_pct": TAKE_PROFIT_PORCENTAJE,
@@ -615,7 +614,7 @@ def main():
                         "ema_slow": EMA_MEDIA_PERIODO
                     })
 
-                    # 12. Detectar rango lateral
+                    # 11. Detecta rango lateral
                     rango_activo = bot_params.get('RANGO_OPERAR', True)
                     if rango_activo:
                         en_rango, soporte, resistencia = detectar_rango_lateral(
@@ -626,7 +625,6 @@ def main():
                             band_width_max=bot_params.get(
                                 'RANGO_BAND_WIDTH_MAX', 0.05)
                         )
-
                         if en_rango:
                             senal_rango = estrategia_rango(
                                 client, symbol, soporte, resistencia,
@@ -639,6 +637,7 @@ def main():
                                 rsi_sobrecompra=bot_params.get(
                                     'RANGO_RSI_SOBRECOMPRA', 70)
                             )
+                            # 11.1 Compra en rango
                             if senal_rango == 'COMPRA' and symbol not in posiciones_abiertas and saldo_usdt_global > 10:
                                 cantidad = trading_logic.calcular_cantidad_a_comprar(
                                     client, saldo_usdt_global, precio_actual,
@@ -657,6 +656,7 @@ def main():
                                         general_message += f"🟢 COMPRA RANGO {symbol}\n"
                                     continue
 
+                            # 11.2 Venta en rango
                             elif senal_rango == 'VENTA' and symbol in posiciones_abiertas:
                                 cantidad_vender = binance_utils.ajustar_cantidad(
                                     binance_utils.obtener_saldo_moneda(
@@ -683,7 +683,7 @@ def main():
                                         general_message += f"🔴 VENTA RANGO {symbol}\n"
                                     continue
 
-                    # 13. Operación en tendencia
+                    # 12. Operación en tendencia
                     ema_corta, ema_media, ema_larga, rsi = trading_logic.calcular_ema_rsi(
                         client, symbol,
                         cf["ema_fast"], cf["ema_slow"],
@@ -692,7 +692,7 @@ def main():
                     if any(v is None for v in (ema_corta, ema_media, ema_larga, rsi)):
                         continue
 
-                    # 14. Filtro de volumen
+                    # 13. Filtro de volumen
                     klines = client.get_klines(
                         symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=20)
                     vol_ratio = float(
@@ -701,6 +701,7 @@ def main():
                     tendencia_alcista = (
                         precio_actual > ema_corta > ema_media > ema_larga)
 
+                    # 14. Lógica de compra
                     comprar_cond = (
                         saldo_usdt_global > 10 and
                         tendencia_alcista and
@@ -725,6 +726,7 @@ def main():
                             if orden:
                                 general_message += f"✅ COMPRA TENDENCIA {symbol}\n"
 
+                    # 15. Lógica de venta
                     elif symbol in posiciones_abiertas:
                         pos = posiciones_abiertas[symbol]
                         precio_compra = pos['precio_compra']
@@ -773,25 +775,37 @@ def main():
                                     config_manager.save_parameters(bot_params)
                                 if orden:
                                     general_message += f"🔴 VENTA {motivo} {symbol}\n"
-                msg = (
-                    f"📊 <b>{symbol}</b>\n"
-                    f"Precio: {precio_actual:.2f} USDT\n"
-                    f"EMA: {ema_c:.2f} / {ema_m:.2f} / {ema_l:.2f}\n"
-                    f"RSI: {rsi:.2f}\n"
-                    f"Tend: {tend_emoji} {tend_text}\n"
-                )
-                if symbol in posiciones_abiertas:
-                    pos = posiciones_abiertas[symbol]
-                    msg += (
-                        f"Posición: Entrada {pos['precio_compra']:.2f} | "
-                        f"TP: {pos['precio_compra']*(1+TAKE_PROFIT_PORCENTAJE):.2f} | "
-                        f"SL: {pos.get('stop_loss_fijo_nivel_actual', pos['precio_compra']*(1-STOP_LOSS_PORCENTAJE)):.2f}\n"
+
+                    # 16. Construye línea del informe por símbolo
+                    ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(
+                        client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
+                        EMA_LARGA_PERIODO, RSI_PERIODO)
+                    if any(v is None for v in (ema_c, ema_m, ema_l, rsi)):
+                        continue
+                    tend_emoji = "📈" if precio_actual > ema_c > ema_m else "📉" if ema_l > ema_m > ema_c else "ǁ"
+                    tend_text = "Alcista" if tend_emoji == "📈" else "Bajista" if tend_emoji == "📉" else "Lateral/Consolidación"
+
+                    msg = (
+                        f"📊 <b>{symbol}</b>\n"
+                        f"Precio: {precio_actual:.2f} USDT\n"
+                        f"EMA: {ema_c:.2f} / {ema_m:.2f} / {ema_l:.2f}\n"
+                        f"RSI: {rsi:.2f}\n"
+                        f"Tend: {tend_emoji} {tend_text}\n"
                     )
-                else:
-                    msg += "Sin posición\n"
-                msg += "\n"
-                general_message += msg
-                # 15. ENVÍA el informe completo por Telegram
+                    if symbol in posiciones_abiertas:
+                        pos = posiciones_abiertas[symbol]
+                        msg += (
+                            f"Posición: Entrada {pos['precio_compra']:.2f} | "
+                            f"TP: {pos['precio_compra']*(1+TAKE_PROFIT_PORCENTAJE):.2f} | "
+                            f"SL: {pos.get('stop_loss_fijo_nivel_actual', pos['precio_compra']*(1-STOP_LOSS_PORCENTAJE)):.2f} | "
+                            f"Max: {pos['max_precio_alcanzado']:.2f} | "
+                            f"TSL: {pos['max_precio_alcanzado']*(1-TRAILING_STOP_PORCENTAJE):.2f}\n"
+                        )
+                    else:
+                        msg += "Sin posición\n"
+                    general_message += msg + "\n"
+
+                # 17. Envía el informe por Telegram
                 with shared_data_lock:
                     try:
                         telegram_handler.send_telegram_message(
@@ -799,10 +813,10 @@ def main():
                     except Exception as e:
                         logging.error(f"Fallo al enviar informe: {e}")
 
-                # 16. Actualiza el tiempo de la última ejecución
+                # 18. Actualiza el tiempo de la última ejecución
                 last_trading_check_time = time.time()
 
-            # 17. Espera el tiempo restante para el siguiente ciclo
+            # 19. Espera el tiempo restante para el siguiente ciclo
             sleep_duration = max(
                 0, INTERVALO - (time.time() - start_time_cycle))
             print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
