@@ -467,7 +467,7 @@ def handle_telegram_commands():
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                             f"📊 <b>Beneficio del día {hoy}</b>:\n"
                             f"  {emoji}  <b>{beneficio_dia:.2f} USDT</b>\n"
-                            f"  {emoji}<b>{beneficio_eur:.2f} EUR</b>"
+                            f"  {emoji}  <b>{beneficio_eur:.2f} EUR</b>"
                         )
 
                 elif command == "/posiciones_actuales":
