@@ -457,7 +457,7 @@ def handle_telegram_commands():
                         except Exception as e:
                             logging.error(
                                 f"Error calculando beneficio diario: {e}")
-                            eur_rate = binance_utils.obtener_precio_eur(client)
+                        eur_rate = binance_utils.obtener_precio_eur(client)
                         beneficio_eur = beneficio_dia / eur_rate if eur_rate else 0.0
                         if beneficio_eur > 0:
                             emoji = "👍"
