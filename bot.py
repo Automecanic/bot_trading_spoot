@@ -405,7 +405,7 @@ def handle_telegram_commands():
 
                         eur_rate = binance_utils.obtener_precio_eur(client)
                         beneficio_eur = beneficio_total / eur_rate if eur_rate else 0.0
-                        if beneficio_total > 0:
+                        if beneficio_eur > 0:
                             emoji = "👍"
                         else:
                             emoji = "💩"
@@ -459,7 +459,7 @@ def handle_telegram_commands():
                                 f"Error calculando beneficio diario: {e}")
                             eur_rate = binance_utils.obtener_precio_eur(client)
                         beneficio_eur = beneficio_dia / eur_rate if eur_rate else 0.0
-                        if beneficio_total > 0:
+                        if beneficio_eur > 0:
                             emoji = "👍"
                         else:
                             emoji = "💩"
