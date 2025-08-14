@@ -387,11 +387,32 @@ def handle_telegram_commands():
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
                 elif command == "/beneficio":
-                    with shared_data_lock:
-                        reporting_manager.send_beneficio_message(
-                            client, bot_params.get(
-                                'TOTAL_BENEFICIO_ACUMULADO', 0.0),
-                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                    db = firestore_utils.get_firestore_db()
+                    beneficio_total = 0.0
+                    if db:
+                        try:
+                            docs = db.collection(
+                                firestore_utils.FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
+                            for doc in docs:
+                                trans = doc.to_dict()
+                                beneficio_total += trans.get(
+                                    'ganancia_usdt', 0.0)
+                        except Exception as e:
+                            logging.error(
+                                f"Error calculando beneficio total: {e}")
+
+                        eur_rate = binance_utils.obtener_precio_eur(client)
+                        beneficio_eur = beneficio_total / eur_rate if eur_rate else 0.0
+                        if beneficio_total > 0:
+                            emoji = "👍"
+                        else:
+                            emoji = "💩"
+                        telegram_handler.send_telegram_message(
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                            f"📈 <b>Beneficio Total Acumulado (TODAS):</b>\n"
+                            f"   {emoji} <b>{beneficio_total:.2f} USDT</b>\n"
+                            f"   {emoji} <b>{beneficio_eur:.2f} EUR</b>"
+                        )
 
                 elif command == "/help":
                     telegram_handler.send_help_message(
@@ -418,13 +439,34 @@ def handle_telegram_commands():
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                             "❌ Uso: /vender <SIMBOLO_USDT>")
 
-                elif command == "/reset_beneficio":
-                    with shared_data_lock:
-                        bot_params['TOTAL_BENEFICIO_ACUMULADO'] = 0.0
-                        config_manager.save_parameters(bot_params)
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        "✅ Beneficio acumulado reseteado a 0")
+                elif command == "/beneficio_diario":
+                    hoy = datetime.now().strftime("%Y-%m-%d")
+                    beneficio_dia = 0.0
+                    db = firestore_utils.get_firestore_db()
+                    if db:
+                        try:
+                            docs = db.collection(
+                                firestore_utils.FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
+                            for doc in docs:
+                                trans = doc.to_dict()
+                                if trans.get('timestamp', '').startswith(hoy):
+                                    beneficio_dia += trans.get(
+                                        'ganancia_usdt', 0.0)
+                        except Exception as e:
+                            logging.error(
+                                f"Error calculando beneficio diario: {e}")
+                            eur_rate = binance_utils.obtener_precio_eur(client)
+                        beneficio_eur = beneficio_dia / eur_rate if eur_rate else 0.0
+                        if beneficio_total > 0:
+                            emoji = "👍"
+                        else:
+                            emoji = "💩"
+                        telegram_handler.send_telegram_message(
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                            f"📊 <b>Beneficio del día {hoy}</b>:\n"
+                            f"  {emoji}  <b>{beneficio_dia:.2f} USDT</b>\n"
+                            f"  {emoji}<b>{beneficio_eur:.2f} EUR</b>"
+                        )
 
                 elif command == "/posiciones_actuales":
                     with shared_data_lock:
@@ -499,8 +541,8 @@ def indicadores(symbol):
     price = closes[-1]
     return price, rsi, ema_fast, ema_slow, vol_ratio
 
+    # ---función principal del bot comenzado por el usuario
 
-# ——— Código completamente comentado línea por línea ———
 
 def main():  # Define la función principal del bot.
     """

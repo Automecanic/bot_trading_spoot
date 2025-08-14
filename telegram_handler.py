@@ -237,7 +237,7 @@ def send_keyboard_menu(token, chat_id, message_text="Selecciona una opción:"):
             [{'text': '/csv'}, {'text': '/analisis'}],
             # Fila 3: Botón para posiciones actuales
             [{'text': '/posiciones_actuales'}],
-            [{'text': '/reset_beneficio'}],  # Fila 4: Resetear Beneficio
+            [{'text': '/beneficio_diario'}],  # Fila 4: Resetear Beneficio
             # Fila 5: Ayuda y Ocultar Menú
             [{'text': '/help'}, {'text': '/hide_menu'}]
         ],
@@ -379,7 +379,8 @@ def set_telegram_commands_menu(token):
         {"command": "beneficio", "description": "Mostrar beneficio acumulado"},
         {"command": "vender",
             "description": "Vender posición (ej. /vender BTCUSDT)"},
-        {"command": "reset_beneficio", "description": "Resetear beneficio acumulado"},
+        {"command": "beneficio_diario",
+            "description": "Mostrar beneficio del día actual"},
         {"command": "posiciones_actuales",
             "description": "Resumen de posiciones abiertas"},
         {"command": "help", "description": "Mostrar ayuda"}
@@ -526,7 +527,7 @@ def send_help_message(token, chat_id):
         " - <code>/beneficio</code>: Muestra el beneficio total acumulado por el bot.\n\n"
         "<b>Utilidades:</b>\n"
         " - <code>/vender &lt;SIMBOLO_USDT&gt;</code>: Vende una posición abierta de forma manual (ej. /vender BTCUSDT).\n"
-        " - <code>/reset_beneficio</code>: Resetear beneficio acumulado a cero.\n"
+        " - <code>/beneficio_diario</code>: Mostrar beneficio acumulado del día en USDT y EUR.\n"
         # Cambiado el comando y descripción
         " - <code>/analisis</code>: Abrir página de análisis web.\n"
         " - <code>/posiciones_actuales</code>: Mostrar resumen de posiciones abiertas.\n"
