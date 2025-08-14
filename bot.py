@@ -29,9 +29,11 @@ import position_manager
 import telegram_handler
 import binance_utils
 import trading_logic
+import firestore_utils
 import reporting_manager
 # NUEVO módulo para detectar mercado lateral y operar en rango
 from range_trading import detectar_rango_lateral, estrategia_rango
+
 
 # ----------------- CONFIGURACIÓN LOGGING -----------------
 logging.basicConfig(
