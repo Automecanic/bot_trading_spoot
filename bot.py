@@ -36,7 +36,6 @@ import os
 # NUEVO módulo para detectar mercado lateral y operar en rango
 from range_trading import detectar_rango_lateral, estrategia_rango
 # Importar el nuevo optimizador IA y scheduler
-import ai_optimizer
 from apscheduler.schedulers.background import BackgroundScheduler
 import ai_optimizer
 
