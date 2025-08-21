@@ -31,8 +31,14 @@ import binance_utils
 import trading_logic
 import firestore_utils
 import reporting_manager
+import json
+import os
 # NUEVO módulo para detectar mercado lateral y operar en rango
 from range_trading import detectar_rango_lateral, estrategia_rango
+# Importar el nuevo optimizador IA y scheduler
+import ai_optimizer
+from apscheduler.schedulers.background import BackgroundScheduler
+import ai_optimizer
 
 
 # ----------------- CONFIGURACIÓN LOGGING -----------------
@@ -73,6 +79,18 @@ RANGO_UMBRAL_ATR = bot_params.get("RANGO_UMBRAL_ATR", 0.015)
 RANGO_RSI_SOBREVENTA = bot_params.get("RANGO_RSI_SOBREVENTA", 30)
 RANGO_RSI_SOBRECOMPRA = bot_params.get("RANGO_RSI_SOBRECOMPRA", 70)
 PARAMS = bot_params.get("symbols", {})
+
+
+ai_optimizer.run()
+# Cargar parámetros IA si existen
+try:
+    with open('ai_params.json', 'r') as f:
+        ia_params = json.load(f)
+        bot_params.update(ia_params)
+        logging.info("✅ Parámetros IA cargados al inicio.")
+except FileNotFoundError:
+    logging.info("ℹ️ No hay parámetros IA previos, se usarán los por defecto.")
+
 # Asegurar persistencia
 config_manager.save_parameters(bot_params)
 
@@ -222,6 +240,8 @@ def handle_telegram_commands():
                         telegram_handler.send_telegram_message(
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                             "❌ Uso: /set_tsl <decimal_ej_0.015>")
+                elif command == "/optimizar_ahora":
+                    ejecutar_optimizacion_ia()
 
                 elif command == "/set_breakeven_porcentaje":
                     if len(parts) == 2:
@@ -546,6 +566,53 @@ def indicadores(symbol):
     # ---función principal del bot comenzado por el usuario
 
 
+def ejecutar_optimizacion_ia():
+    """
+    Genera CSV desde Firestore y ejecuta optimización IA.
+    """
+    logging.info("📊 Generando CSV desde Firestore...")
+    generar_csv_desde_firestore()  # ← Nuevo
+
+    logging.info("🤖 Ejecutando optimización IA...")
+    try:
+        import ai_optimizer
+        ai_optimizer.run()
+    except Exception as e:
+        logging.error(f"❌ Error en optimización IA: {e}")
+
+
+def generar_csv_desde_firestore():
+    """
+    Genera transacciones_historico.csv desde Firestore.
+    Se ejecuta antes de la optimización IA.
+    """
+    db = firestore_utils.get_firestore_db()
+    if not db:
+        logging.error("❌ No se pudo conectar a Firestore para generar CSV")
+        return
+
+    FIRESTORE_TRANSACTIONS_COLLECTION_PATH = f"artifacts/{os.getenv('__app_id', 'default-app-id')}/public/data/transactions_history"
+    docs = db.collection(FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
+
+    data = []
+    for doc in docs:
+        d = doc.to_dict()
+        data.append({
+            'TAKE_PROFIT_PORCENTAJE': d.get('TAKE_PROFIT_PORCENTAJE', 0.03),
+            'TRAILING_STOP_PORCENTAJE': d.get('TRAILING_STOP_PORCENTAJE', 0.015),
+            'RIESGO_POR_OPERACION_PORCENTAJE': d.get('RIESGO_POR_OPERACION_PORCENTAJE', 0.01),
+            'ganancia_usdt': d.get('ganancia_usdt', 0)
+        })
+
+    if not data:
+        logging.warning("⚠️ No hay transacciones para generar CSV")
+        return
+
+    import pandas as pd
+    pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
+    logging.info(f"✅ CSV generado con {len(data)} transacciones")
+
+
 def main():  # Define la función principal del bot.
     """
     Función principal que inicia el bot y maneja el ciclo de trading.
@@ -582,7 +649,17 @@ def main():  # Define la función principal del bot.
         # Pasa el evento de parada como argumento al listener.
         target=telegram_listener, args=(telegram_stop_event,))
     telegram_thread.start()  # Inicia el hilo de escucha de Telegram.
-
+    # Scheduler para optimización IA cada 24 horas
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        ejecutar_optimizacion_ia,
+        trigger='cron',  # Ejecutar cada día a las 02:00 UTC
+        hour=2,
+        minute=0,
+        timezone='UTC'
+    )
+    scheduler.start()
+    logging.info("📅 Scheduler de optimización IA iniciado (02:00 UTC diario)")
     try:  # Bloque principal protegido para capturar interrupciones/errores.
         # Bucle infinito del ciclo de trading (hasta que se interrumpa manual o programáticamente).
         while True:
