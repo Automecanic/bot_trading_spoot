@@ -1125,4 +1125,19 @@ if __name__ == "__main__":
                         format='%(asctime)s - %(levelname)s - %(message)s')
     # Escribe una línea inicial en el log.
     logging.info("Iniciando bot de trading...")
+
+    from apscheduler.schedulers.blocking import BlockingScheduler
+    from datetime import datetime
+
+    scheduler = BlockingScheduler()
+    scheduler.add_job(
+        ai_optimizer.run,
+        trigger="interval",
+        hours=24,
+        next_run_time=datetime.now()
+    )
+    try:
+        scheduler.start()
+    except KeyboardInterrupt:
+        pass
     main()  # Llama a la función principal para iniciar el bot.
