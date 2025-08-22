@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-def run():
+def run_optimization():
     """
     Función principal que ejecuta la optimización de parámetros
     y guarda los resultados en ai_params.json y Firestore.
@@ -95,4 +95,4 @@ def run():
 
 # Permitir ejecución directa
 if __name__ == "__main__":
-    run()
+    run_optimization()
