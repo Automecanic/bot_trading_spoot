@@ -637,9 +637,10 @@ def main():  # Define la función principal del bot.
     logging.info("📆 Optimización programada cada 24 h en background.")
 
     # Arrancar bot
-    updater.start_polling()
+   # ✅ v20
+    app.run_polling()      # bloquea y atiende mensajes
     logging.info("🤖 Bot de Telegram activo")
-    updater.idle()
+    app.idle()
 
     # 1. Conecta con Binance
     # Escribe en el log que se iniciará el cliente de Binance.
