@@ -570,7 +570,7 @@ def ejecutar_optimizacion_ia():
     logging.info("🤖 Ejecutando optimización IA...")
     try:
         import ai_optimizer
-        ai_optimizer.run()
+        ai_optimizer.run_optimization()
     except Exception as e:
         logging.error(f"❌ Error en optimización IA: {e}")
 
