@@ -611,7 +611,7 @@ def generar_csv_desde_firestore():
 
 
 def main():
-    # 1. Scheduler IA – optimización diaria 02:00 UTC
+    # 1. Scheduler IA – 02:00 UTC diario
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         ejecutar_optimizacion_ia,
@@ -624,19 +624,18 @@ def main():
     # 2. Bot de Telegram – PTB v20
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Registramos **todos** los comandos y textos
+    # Handlers correctos
     app.add_handler(CommandHandler("start", start))
-    # cualquier /comando
-    app.add_handler(CommandHandler(None, handle_telegram_commands))
+    app.add_handler(MessageHandler(filters.COMMAND,
+                    handle_telegram_commands))  # /comando
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
-                                   handle_telegram_commands))        # texto y botones
+                                   handle_telegram_commands))  # texto y botones
 
-    # 3. Ciclo de trading en hilo apartado
+    # 3. Trading loop
     trading_thread = threading.Thread(target=trading_loop, daemon=True)
     trading_thread.start()
 
-    # 4. Arrancar bot (bloqueante)
-    logging.info("🤖 Bot de Telegram arrancando...")
+    # 4. Arrancar
     app.run_polling()
 
 
