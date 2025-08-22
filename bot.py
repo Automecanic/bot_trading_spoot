@@ -38,6 +38,12 @@ from range_trading import detectar_rango_lateral, estrategia_rango
 # Importar el nuevo optimizador IA y scheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 import ai_optimizer
+# bot.py
+import logging
+from datetime import datetime
+from telegram.ext import Updater, ...
+
+from ai_optimizer import run_optimization  # función que ejecuta Optuna
 
 
 # ----------------- CONFIGURACIÓN LOGGING -----------------
@@ -617,6 +623,25 @@ def main():  # Define la función principal del bot.
     Función principal que inicia el bot y maneja el ciclo de trading.
     """
     global last_trading_check_time, ultima_fecha_informe_enviado  # Declara que se usarán/actualizarán estas variables globales.
+    updater = Updater(token=TOKEN, use_context=True)
+    dp = updater.dispatcher
+    # ... tus handlers ...
+
+    # Arrancar scheduler en background
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        run_optimization,
+        trigger="interval",
+        hours=24,
+        next_run_time=datetime.now()  # primera ejecución inmediata
+    )
+    scheduler.start()
+    logging.info("📆 Optimización programada cada 24 h en background.")
+
+    # Arrancar bot
+    updater.start_polling()
+    logging.info("🤖 Bot de Telegram activo")
+    updater.idle()
 
     # 1. Conecta con Binance
     # Escribe en el log que se iniciará el cliente de Binance.
@@ -1120,24 +1145,5 @@ def main():  # Define la función principal del bot.
 
 # Punto de entrada del script cuando se ejecuta directamente.
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,  # Configura el nivel de logging a INFO.
-                        # Define el formato de las líneas de log.
-                        format='%(asctime)s - %(levelname)s - %(message)s')
-    # Escribe una línea inicial en el log.
-    logging.info("Iniciando bot de trading...")
 
-    from apscheduler.schedulers.blocking import BlockingScheduler
-    from datetime import datetime
-
-    scheduler = BlockingScheduler()
-    scheduler.add_job(
-        ai_optimizer.run,
-        trigger="interval",
-        hours=24,
-        next_run_time=datetime.now()
-    )
-    try:
-        scheduler.start()
-    except KeyboardInterrupt:
-        pass
     main()  # Llama a la función principal para iniciar el bot.
