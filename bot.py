@@ -41,8 +41,7 @@ import ai_optimizer
 # bot.py
 import logging
 from datetime import datetime
-from telegram.ext import Updater, ...
-
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext,  Dispatcher
 from ai_optimizer import run_optimization  # función que ejecuta Optuna
 
 
