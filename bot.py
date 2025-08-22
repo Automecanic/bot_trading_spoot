@@ -1143,7 +1143,7 @@ def main():  # Define la función principal del bot.
 
 # Punto de entrada del script cuando se ejecuta directamente.
 if __name__ == "__main__":
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.run_polling()
     main()  # Llama a la función principal para iniciar el bot.
