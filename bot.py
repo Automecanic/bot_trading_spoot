@@ -607,9 +607,11 @@ def generar_csv_desde_firestore():
     logging.info(f"✅ CSV generado con {len(data)} transacciones")
 # ✅ NUEVO main() único
 
+# bot.py – main() definitivo y funcional
+
 
 def main():
-    # 1. Scheduler IA – cada día 02:00 UTC
+    # 1. Scheduler IA – optimización diaria 02:00 UTC
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         ejecutar_optimizacion_ia,
@@ -619,21 +621,22 @@ def main():
     scheduler.start()
     logging.info("📆 Optimización IA programada a las 02:00 UTC")
 
-    # 2. Bot de Telegram
+    # 2. Bot de Telegram – PTB v20
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # 👇  Registramos TODOS los comandos y botones
-    app.add_handler(CommandHandler("start", start))          # /start
-    # /cualquier-comando
+    # Registramos **todos** los comandos y textos
+    app.add_handler(CommandHandler("start", start))
+    # cualquier /comando
     app.add_handler(CommandHandler(None, handle_telegram_commands))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
-                    handle_telegram_commands))  # texto y botones
+                                   handle_telegram_commands))        # texto y botones
 
-    # 3. Trading loop en hilo apartado
+    # 3. Ciclo de trading en hilo apartado
     trading_thread = threading.Thread(target=trading_loop, daemon=True)
     trading_thread.start()
 
-    # 4. Arrancar
+    # 4. Arrancar bot (bloqueante)
+    logging.info("🤖 Bot de Telegram arrancando...")
     app.run_polling()
 
 
