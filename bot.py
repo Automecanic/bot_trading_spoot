@@ -42,6 +42,7 @@ import ai_optimizer
 import logging
 from datetime import datetime
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update
 from ai_optimizer import run_optimization  # función que ejecuta Optuna
 
 
