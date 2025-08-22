@@ -614,7 +614,7 @@ def main():
     # 1. Scheduler IA – 02:00 UTC diario
     scheduler = BackgroundScheduler()
     scheduler.add_job(
-        ejecutar_optimizacion_ia,
+        ai_optimizer.run_optimization,
         trigger="cron",
         hour=2, minute=0, timezone="UTC"
     )
