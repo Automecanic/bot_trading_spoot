@@ -622,7 +622,7 @@ def main():  # Define la función principal del bot.
     Función principal que inicia el bot y maneja el ciclo de trading.
     """
     global last_trading_check_time, ultima_fecha_informe_enviado  # Declara que se usarán/actualizarán estas variables globales.
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     # ... tus handlers ...
 
     # Arrancar scheduler en background
