@@ -85,7 +85,6 @@ RANGO_RSI_SOBRECOMPRA = bot_params.get("RANGO_RSI_SOBRECOMPRA", 70)
 PARAMS = bot_params.get("symbols", {})
 
 
-ai_optimizer.run_optimization()
 # Cargar parámetros IA si existen
 try:
     with open('ai_params.json', 'r') as f:
@@ -615,35 +614,39 @@ def generar_csv_desde_firestore():
     import pandas as pd
     pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
     logging.info(f"✅ CSV generado con {len(data)} transacciones")
+# ✅ NUEVO main() único
 
 
-def main():  # Define la función principal del bot.
-    """
-    Función principal que inicia el bot y maneja el ciclo de trading.
-    """
-    global last_trading_check_time, ultima_fecha_informe_enviado  # Declara que se usarán/actualizarán estas variables globales.
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    # ... tus handlers ...
-
-    # Arrancar scheduler en background
+def main():
+    # 1. Scheduler IA
     scheduler = BackgroundScheduler()
     scheduler.add_job(
-        run_optimization,
-        trigger="interval",
-        hours=24,
-        next_run_time=datetime.now()  # primera ejecución inmediata
+        ejecutar_optimizacion_ia,
+        trigger="cron",
+        hour=2, minute=0, timezone="UTC"
     )
     scheduler.start()
-    logging.info("📆 Optimización programada cada 24 h en background.")
+    logging.info("📆 Optimización IA programada a las 02:00 UTC")
 
-    # Arrancar bot
-   # ✅ v20
-    app.run_polling()      # bloquea y atiende mensajes
-    logging.info("🤖 Bot de Telegram activo")
-    app.idle()
+    # 2. Bot de Telegram
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
 
-    # 1. Conecta con Binance
-    # Escribe en el log que se iniciará el cliente de Binance.
+    # 3. Arrancar trading en **thread apartado**
+    trading_thread = threading.Thread(target=trading_loop, daemon=True)
+    trading_thread.start()
+
+    # 4. Iniciar el bot (bloquea aquí)
+    app.run_polling()
+
+
+def trading_loop():
+    # ← Copia todo el código anterior que estaba en el while True
+    # (líneas ~900-1150) y reemplaza `main()` antiguo por esta función
+
+    # Declara que se usarán/actualizarán estas variables globales.
+    global last_trading_check_time, ultima_fecha_informe_enviado
+
     logging.info("Iniciando cliente Binance...")
     # Envía un ping a Binance para verificar conectividad y credenciales.
     client.ping()
@@ -657,32 +660,6 @@ def main():  # Define la función principal del bot.
         # Pasa el porcentaje de stop-loss por defecto para validar/normalizar posiciones.
         STOP_LOSS_PORCENTAJE)
 
-# 3. Inicializa los comandos de Telegram
-    # Mensaje informativo para el log.
-    logging.info("Iniciando manejador de comandos Telegram...")
-    # Configura el menú/atajos de comandos del bot en Telegram.
-    telegram_handler.set_telegram_commands_menu(TELEGRAM_BOT_TOKEN)
-    # Confirma que el bot está listo.
-    logging.info("Bot iniciado. Esperando comandos y monitoreando mercado...")
-
-    # 4. Lanza el hilo que escucha comandos de Telegram
-    # Crea un evento para poder detener el hilo del listener cuando sea necesario.
-    telegram_stop_event = threading.Event()
-    telegram_thread = threading.Thread(  # Crea un nuevo hilo que ejecutará la función que escucha Telegram.
-        # Pasa el evento de parada como argumento al listener.
-        target=telegram_listener, args=(telegram_stop_event,))
-    telegram_thread.start()  # Inicia el hilo de escucha de Telegram.
-    # Scheduler para optimización IA cada 24 horas
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        ejecutar_optimizacion_ia,
-        trigger='cron',  # Ejecutar cada día a las 02:00 UTC
-        hour=2,
-        minute=0,
-        timezone='UTC'
-    )
-    scheduler.start()
-    logging.info("📅 Scheduler de optimización IA iniciado (02:00 UTC diario)")
     try:  # Bloque principal protegido para capturar interrupciones/errores.
         # Bucle infinito del ciclo de trading (hasta que se interrumpa manual o programáticamente).
         while True:
@@ -1143,13 +1120,9 @@ def main():  # Define la función principal del bot.
 
 
 # Punto de entrada del script cuando se ejecuta directamente.
-if __name__ == "__main__":
-    from telegram import Update
-    from telegram.ext import ContextTypes
+# ✅
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("¡Bot activo!")
 
-    async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("¡Hola! El bot está listo.")
-        app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-        app.add_handler(CommandHandler("start", start))
-        app.run_polling()
-    main()  # Llama a la función principal para iniciar el bot.
+if __name__ == "__main__":
+    main()
