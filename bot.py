@@ -609,7 +609,7 @@ def generar_csv_desde_firestore():
 
 
 def main():
-    # 1. Scheduler IA – optimiza cada día a las 02:00 UTC
+    # 1. Scheduler IA – cada día 02:00 UTC
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         ejecutar_optimizacion_ia,
@@ -622,27 +622,18 @@ def main():
     # 2. Bot de Telegram
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # ——— Registramos todos los comandos que ya procesa handle_telegram_commands() ———
-    app.add_handler(CommandHandler("start", start))
+    # 👇  Registramos TODOS los comandos y botones
+    app.add_handler(CommandHandler("start", start))          # /start
+    # /cualquier-comando
+    app.add_handler(CommandHandler(None, handle_telegram_commands))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
+                    handle_telegram_commands))  # texto y botones
 
-    # Este handler captura **cualquier mensaje de texto** (comandos y botones)
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & ~filters.COMMAND,  # excluye /start para no duplicar
-            handle_telegram_commands
-        )
-    )
-
-    # (Opcional) si prefieres capturar TODOS los comandos con otro handler:
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, handle_telegram_commands))
-
-    # 3. Lanzar el ciclo de trading en un hilo apartado
+    # 3. Trading loop en hilo apartado
     trading_thread = threading.Thread(target=trading_loop, daemon=True)
     trading_thread.start()
 
-    # 4. Arrancar el bot (bloquea aquí)
+    # 4. Arrancar
     app.run_polling()
 
 
