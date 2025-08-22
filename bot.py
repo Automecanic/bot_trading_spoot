@@ -41,7 +41,7 @@ import ai_optimizer
 # bot.py
 import logging
 from datetime import datetime
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext,  Dispatcher
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from ai_optimizer import run_optimization  # función que ejecuta Optuna
 
 
@@ -622,8 +622,7 @@ def main():  # Define la función principal del bot.
     Función principal que inicia el bot y maneja el ciclo de trading.
     """
     global last_trading_check_time, ultima_fecha_informe_enviado  # Declara que se usarán/actualizarán estas variables globales.
-    updater = Updater(token=TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = Application.builder().token(TOKEN).build()
     # ... tus handlers ...
 
     # Arrancar scheduler en background
@@ -1144,5 +1143,7 @@ def main():  # Define la función principal del bot.
 
 # Punto de entrada del script cuando se ejecuta directamente.
 if __name__ == "__main__":
-
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.run_polling()
     main()  # Llama a la función principal para iniciar el bot.
