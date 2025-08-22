@@ -85,7 +85,7 @@ RANGO_RSI_SOBRECOMPRA = bot_params.get("RANGO_RSI_SOBRECOMPRA", 70)
 PARAMS = bot_params.get("symbols", {})
 
 
-ai_optimizer.run()
+ai_optimizer.run_optimization()
 # Cargar parámetros IA si existen
 try:
     with open('ai_params.json', 'r') as f:
