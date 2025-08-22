@@ -1,12 +1,6 @@
 #python-binance==1.0.29
-#
-pandas==2.2.2
-numpy==1.26.4
-scikit-learn
-optuna
-google-cloud-firestore
 python-telegram-bot>=20
-apscheduler
+python-binance
 python-dotenv
 requests
 firebase-admin
@@ -15,3 +9,4 @@ numpy==1.26.4
 scikit-learn
 optuna
 google-cloud-firestore
+apscheduler
