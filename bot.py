@@ -44,7 +44,11 @@ from datetime import datetime
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
 from ai_optimizer import run_optimization  # función que ejecuta Optuna
-
+# ===== FIX SCHEDULER TIMEZONE =====
+from apscheduler.schedulers.background import BackgroundScheduler
+from pytz import timezone
+import pytz  # Asegura que pytz esté instalado
+# ===================================
 
 # ----------------- CONFIGURACIÓN LOGGING -----------------
 logging.basicConfig(
@@ -647,15 +651,19 @@ def generar_csv_desde_firestore():
 def main():
     # 1. Scheduler IA – 02:00 UTC diario
     scheduler = BackgroundScheduler()
+    # Reemplaza TODAS las líneas que tengan `scheduler.add_job(...)` por este bloque
+    scheduler = BackgroundScheduler(
+        timezone=pytz.UTC  # ✅ Usa objeto pytz
+    )
     scheduler.add_job(
-        'bot:ejecutar_optimizacion_ia',  # ← Referencia textual al callable
+        'bot:ejecutar_optimizacion_ia',
         trigger='cron',
         hour=2,
         minute=0,
-        timezone='UTC'
+        timezone=pytz.UTC  # ✅ Mismo objeto pytz
     )
     scheduler.start()
-    logging.info("📆 Optimización IA programada a las 02:00 UTC")
+    logging.info("📅 Scheduler IA activado a las 02:00 UTC")
 
     # 2. Bot de Telegram – PTB v20
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
