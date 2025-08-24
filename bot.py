@@ -12,6 +12,7 @@ VERSIÓN COMPLETA:
 """
 
 # ------------------- IMPORTS -------------------
+from dotenv import load_dotenv
 import os
 import time
 import json
@@ -66,6 +67,8 @@ def calculate_rsi(prices, period=14):
     return 100 - (100 / (1 + rs.iloc[-1]))
 
 
+# Al inicio del archivo, después de los imports
+load_dotenv()  # Carga las variables desde .env
 # ----------------- VARIABLES GLOBALES -----------------
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_SECRET")
