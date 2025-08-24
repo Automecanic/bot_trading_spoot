@@ -121,7 +121,7 @@ shared_data_lock = threading.Lock()
 # ---------- SCHEDULER IA ----------
 scheduler = BackgroundScheduler(timezone=pytz.UTC)
 scheduler.add_job(
-    'bot:ejecutar_optimizacion_ia',
+    ejecutar_optimizacion_ia,
     trigger='cron',
     hour=2,
     minute=0,
@@ -547,12 +547,18 @@ def enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio):
 
 
 def telegram_listener(stop_event):
+    last_update_id = 0
     while not stop_event.is_set():
         try:
-            handle_telegram_commands()
-            time.sleep(TELEGRAM_LISTEN_INTERVAL)
+            updates = telegram_handler.get_telegram_updates(
+                last_update_id + 1, TELEGRAM_BOT_TOKEN)
+            if updates and updates['ok']:
+                for update in updates['result']:
+                    last_update_id = update['update_id']
+                    # tu handler aquí
         except Exception as e:
-            logging.error(f"Error hilo Telegram: {e}")
+            logging.error(f"Error telegram_listener: {e}")
+        time.sleep(5)
 
 # ------------------------------------------------------------------
 #  FUNCIÓN INDICADORES (nueva)
@@ -1161,16 +1167,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     logging.info("🚀 Iniciando bot...")
 
-    # 1. Hilo trading
-    trading_thread = threading.Thread(target=trading_loop, daemon=True)
-    trading_thread.start()
+    # Scheduler IA
+    scheduler = BackgroundScheduler(timezone=pytz.UTC)
+    scheduler.add_job(ejecutar_optimizacion_ia,
+                      trigger='cron', hour=2, minute=0)
+    scheduler.start()
 
-    # 2. Hilo Telegram
-    telegram_thread = threading.Thread(target=telegram_listener,
-                                       args=(telegram_stop_event,), daemon=True)
-    telegram_thread.start()
+    # Hilos
+    threading.Thread(target=trading_loop, daemon=True).start()
+    threading.Thread(target=telegram_listener, args=(
+        telegram_stop_event,), daemon=True).start()
 
-    # 3. Mantener proceso vivo
     try:
         while True:
             time.sleep(10)
