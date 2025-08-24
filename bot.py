@@ -23,7 +23,7 @@ import requests
 from binance.client import Client
 from binance.enums import *
 import numpy as np
-import talib
+import pandas as pd  # Reemplazamos talib por pandas
 
 # ------------- IMPORTS DE MÓDULOS PROPIOS -------------
 import config_manager
@@ -48,6 +48,23 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+# ----------------- FUNCIONES TÉCNICAS ALTERNATIVAS (sin talib) -----------------
+
+
+def calculate_ema(prices, period):
+    """Calcula EMA usando pandas"""
+    return pd.Series(prices).ewm(span=period, adjust=False).mean().iloc[-1]
+
+
+def calculate_rsi(prices, period=14):
+    """Calcula RSI usando pandas"""
+    delta = pd.Series(prices).diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs.iloc[-1]))
+
 
 # ----------------- VARIABLES GLOBALES -----------------
 API_KEY = os.getenv("BINANCE_API_KEY")
@@ -501,7 +518,7 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
             text=f"❌ Error interno al procesar comando: {ex}")
 
 # ------------------------------------------------------------------
-#  FUNCIÓN INDICADORES
+#  FUNCIÓN INDICADORES (ahora sin talib)
 # ------------------------------------------------------------------
 
 
@@ -511,11 +528,14 @@ def indicadores(symbol):
         symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=50)
     closes = np.array([float(k[4]) for k in klines])
     vols = np.array([float(k[5]) for k in klines])
-    rsi = talib.RSI(closes, timeperiod=14)[-1]
-    ema_fast = talib.EMA(closes, timeperiod=cfg(symbol)["ema_fast"])[-1]
-    ema_slow = talib.EMA(closes, timeperiod=cfg(symbol)["ema_slow"])[-1]
+
+    # Calcular indicadores usando pandas en lugar de talib
+    rsi = calculate_rsi(closes, 14)
+    ema_fast = calculate_ema(closes, cfg(symbol)["ema_fast"])
+    ema_slow = calculate_ema(closes, cfg(symbol)["ema_slow"])
     vol_ratio = vols[-1] / (np.mean(vols[-20:]) + 1e-8)
     price = closes[-1]
+
     return price, rsi, ema_fast, ema_slow, vol_ratio
 
 # ------------------------------------------------------------------
@@ -549,7 +569,6 @@ def ejecutar_optimizacion_ia():
             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
             "⚠️ No hay transacciones para optimizar.")
         return
-    import pandas as pd
     pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
     ai_optimizer.run()
     telegram_handler.send_telegram_message(
@@ -581,7 +600,6 @@ def generar_csv_desde_firestore():
         logging.warning("⚠️ No hay transacciones para generar CSV")
         return
 
-    import pandas as pd
     pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
     logging.info(f"✅ CSV generado con {len(data)} transacciones")
 
