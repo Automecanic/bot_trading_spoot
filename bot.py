@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-bot.py  – 2025-06-05
-VERSIÓN COMPLETA:
+bot.py – 2025-06-05
+VERSIÓN COMPLETA PARA RAILWAY:
 - Opera en tendencia (EMA/RSI) como siempre.
 - Detecta mercado lateral y opera en rango (cuando está activo).
 - Sin eliminar ninguna funcionalidad anterior.
@@ -15,8 +15,12 @@ VERSIÓN COMPLETA:
 import os
 import time
 import json
+import csv
 import logging
 import threading
+import asyncio
+import numpy as np
+import talib
 from datetime import datetime, timedelta
 import requests
 from binance.client import Client
@@ -30,24 +34,13 @@ import binance_utils
 import trading_logic
 import firestore_utils
 import reporting_manager
-import json
-import os
+import ai_optimizer
 # NUEVO módulo para detectar mercado lateral y operar en rango
 from range_trading import detectar_rango_lateral, estrategia_rango
 # Importar el nuevo optimizador IA y scheduler
 from apscheduler.schedulers.background import BackgroundScheduler
-import ai_optimizer
-# bot.py
-import logging
-from datetime import datetime
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram import Update
-from ai_optimizer import run_optimization  # función que ejecuta Optuna
-# ===== FIX SCHEDULER TIMEZONE =====
-from apscheduler.schedulers.background import BackgroundScheduler
 from pytz import timezone
 import pytz  # Asegura que pytz esté instalado
-# ===================================
 
 # ----------------- CONFIGURACIÓN LOGGING -----------------
 logging.basicConfig(
@@ -58,7 +51,7 @@ logging.basicConfig(
 # ----------------- VARIABLES GLOBALES -----------------
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OPEN_POSITIONS_FILE = "open_positions.json"
 
@@ -88,7 +81,6 @@ RANGO_RSI_SOBREVENTA = bot_params.get("RANGO_RSI_SOBREVENTA", 30)
 RANGO_RSI_SOBRECOMPRA = bot_params.get("RANGO_RSI_SOBRECOMPRA", 70)
 PARAMS = bot_params.get("symbols", {})
 
-
 # Cargar parámetros IA si existen
 try:
     with open('ai_params.json', 'r') as f:
@@ -100,7 +92,6 @@ except FileNotFoundError:
 
 # Asegurar persistencia
 config_manager.save_parameters(bot_params)
-
 
 # ----------------- CLIENTE BINANCE -----------------
 client = Client(API_KEY, API_SECRET, testnet=True,
@@ -116,6 +107,7 @@ transacciones_diarias = []
 ultima_fecha_informe_enviado = None
 last_trading_check_time = 0
 shared_data_lock = threading.Lock()
+telegram_stop_event = threading.Event()
 
 
 def cfg(symbol):
@@ -130,7 +122,6 @@ def cfg(symbol):
         "ema_fast": 9,
         "ema_slow": 21
     })
-
 
 # ------------------------------------------------------------------
 #  MANEJADOR DE COMANDOS TELEGRAM (completo) – incluye nuevos comandos
@@ -201,13 +192,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['TAKE_PROFIT_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ TAKE PROFIT a {nuevo:.4f}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ TAKE PROFIT a {nuevo:.4f}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_tp <decimal_ej_0.03>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_tp <decimal_ej_0.03>")
 
         elif command == "/set_sl_fijo":
             if len(parts) == 2:
@@ -215,13 +206,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['STOP_LOSS_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ STOP LOSS FIJO a {nuevo:.4f}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ STOP LOSS FIJO a {nuevo:.4f}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_sl_fijo <decimal_ej_0.02>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_sl_fijo <decimal_ej_0.02>")
 
         elif command == "/set_tsl":
             if len(parts) == 2:
@@ -229,13 +220,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['TRAILING_STOP_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ TRAILING STOP a {nuevo:.4f}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ TRAILING STOP a {nuevo:.4f}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_tsl <decimal_ej_0.015>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_tsl <decimal_ej_0.015>")
 
         elif command == "/optimizar_ahora":
             ejecutar_optimizacion_ia()
@@ -246,13 +237,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['BREAKEVEN_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ BREAKEVEN a {nuevo:.4f}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ BREAKEVEN a {nuevo:.4f}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_breakeven_porcentaje <decimal_ej_0.005>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_breakeven_porcentaje <decimal_ej_0.005>")
 
         # ---------- 2. PARÁMETROS DE INDICADORES ----------
         elif command == "/set_ema_corta_periodo":
@@ -261,13 +252,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['EMA_CORTA_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ EMA CORTA período a {nuevo}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ EMA CORTA período a {nuevo}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_ema_corta_periodo <entero>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_ema_corta_periodo <entero>")
 
         elif command == "/set_ema_media_periodo":
             if len(parts) == 2:
@@ -275,13 +266,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['EMA_MEDIA_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ EMA MEDIA período a {nuevo}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ EMA MEDIA período a {nuevo}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_ema_media_periodo <entero>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_ema_media_periodo <entero>")
 
         elif command == "/set_ema_larga_periodo":
             if len(parts) == 2:
@@ -289,13 +280,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['EMA_LARGA_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ EMA LARGA período a {nuevo}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ EMA LARGA período a {nuevo}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_ema_larga_periodo <entero>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_ema_larga_periodo <entero>")
 
         elif command == "/set_rsi_periodo":
             if len(parts) == 2:
@@ -303,13 +294,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['RSI_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ RSI período a {nuevo}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ RSI período a {nuevo}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_rsi_periodo <entero>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_rsi_periodo <entero>")
 
         elif command == "/set_rsi_umbral":
             if len(parts) == 2:
@@ -317,13 +308,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['RSI_UMBRAL_SOBRECOMPRA'] = nuevo
                     config_manager.save_parameters(bot_params)
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"✅ RSI umbral sobrecompra a {nuevo}")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"✅ RSI umbral sobrecompra a {nuevo}")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_rsi_umbral <entero>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_rsi_umbral <entero>")
 
         # ---------- 3. PARÁMETROS DE RANGO ----------
         elif command == "/set_rango_params":
@@ -335,17 +326,17 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         bot_params['RANGO_PERIODO_ANALISIS'] = periodo
                         bot_params['RANGO_UMBRAL_ATR'] = umbral
                         config_manager.save_parameters(bot_params)
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        f"✅ RANGO período={periodo}, umbral={umbral}")
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ RANGO período={periodo}, umbral={umbral}")
                 except ValueError:
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        "❌ Uso: /set_rango_params <periodo> <umbral>")
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="❌ Uso: /set_rango_params <periodo> <umbral>")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_rango_params <periodo> <umbral>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_rango_params <periodo> <umbral>")
 
         elif command == "/set_rango_rsi":
             if len(parts) == 3:
@@ -356,17 +347,17 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         bot_params['RANGO_RSI_SOBREVENTA'] = sv
                         bot_params['RANGO_RSI_SOBRECOMPRA'] = sc
                         config_manager.save_parameters(bot_params)
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        f"✅ RSI rango → sobreventa={sv}, sobrecompra={sc}")
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ RSI rango → sobreventa={sv}, sobrecompra={sc}")
                 except ValueError:
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        "❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
 
         elif command == "/toggle_rango":
             with shared_data_lock:
@@ -374,18 +365,21 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                     'RANGO_OPERAR', True)
                 config_manager.save_parameters(bot_params)
             estado = "ACTIVADO" if bot_params['RANGO_OPERAR'] else "DESACTIVADO"
-            telegram_handler.send_telegram_message(
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                f"✅ Operar en rango lateral {estado}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ Operar en rango lateral {estado}")
 
         # ---------- 4. COMANDOS CLÁSICOS (sin cambios) ----------
         elif command == "/start" or command == "/menu":
-            telegram_handler.send_keyboard_menu(
-                TELEGRAM_BOT_TOKEN, chat_id, "¡Hola! Selecciona una opción o usa /help")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="¡Hola! Selecciona una opción o usa /help")
 
         elif command == "/hide_menu":
-            telegram_handler.remove_keyboard_menu(
-                TELEGRAM_BOT_TOKEN, chat_id)
+            # No implementado en PTB v20
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Menú oculto")
 
         elif command == "/get_params":
             with shared_data_lock:
@@ -395,13 +389,16 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         msg += f"- {k}: {v:.4f}\n"
                     else:
                         msg += f"- {k}: {v}\n"
-            telegram_handler.send_telegram_message(
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                parse_mode='HTML')
 
         elif command == "/csv":
             with shared_data_lock:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "Generando CSV...")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="Generando CSV...")
                 reporting_manager.generar_y_enviar_csv_ahora(
                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
@@ -414,11 +411,9 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         firestore_utils.FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
                     for doc in docs:
                         trans = doc.to_dict()
-                        beneficio_total += trans.get(
-                            'ganancia_usdt', 0.0)
+                        beneficio_total += trans.get('ganancia_usdt', 0.0)
                 except Exception as e:
-                    logging.error(
-                        f"Error calculando beneficio total: {e}")
+                    logging.error(f"Error calculando beneficio total: {e}")
 
                 eur_rate = binance_utils.obtener_precio_eur(client)
                 beneficio_eur = beneficio_total / eur_rate if eur_rate else 0.0
@@ -426,16 +421,39 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                     emoji = "👍"
                 else:
                     emoji = "💩"
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"📈 <b>Beneficio Total Acumulado (TODAS):</b>\n"
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"📈 <b>Beneficio Total Acumulado (TODAS):</b>\n"
                     f"   {emoji} <b>{beneficio_total:.2f} USDT</b>\n"
-                    f"   {emoji} <b>{beneficio_eur:.2f} EUR</b>"
-                )
+                    f"   {emoji} <b>{beneficio_eur:.2f} EUR</b>",
+                    parse_mode='HTML')
 
         elif command == "/help":
-            telegram_handler.send_help_message(
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+            help_text = (
+                "/start - Menú principal\n"
+                "/toggle_rango - Activa/Desactiva operación en rango\n"
+                "/set_rango_params <periodo> <umbral> - Configura parámetros de rango\n"
+                "/set_rango_rsi <sobreventa> <sobrecompra> - Configura RSI para rango\n"
+                "/set_riesgo - Establece riesgo por operación\n"
+                "/set_tp - Establece take profit\n"
+                "/set_sl_fijo - Establece stop loss fijo\n"
+                "/set_tsl - Establece trailing stop\n"
+                "/set_breakeven_porcentaje - Establece porcentaje de break even\n"
+                "/set_rsi_periodo - Establece período RSI\n"
+                "/set_rsi_umbral - Establece umbral RSI sobrecompra\n"
+                "/set_ema_corta_periodo - Establece período EMA corta\n"
+                "/set_ema_media_periodo - Establece período EMA media\n"
+                "/set_ema_larga_periodo - Establece período EMA larga\n"
+                "/set_intervalo - Establece intervalo de revisión\n"
+                "/get_params - Ver parámetros actuales\n"
+                "/csv - Generar informe CSV\n"
+                "/beneficio - Ver beneficio total\n"
+                "/beneficio_diario - Ver beneficio del día\n"
+                "/posiciones_actuales - Ver posiciones abiertas\n"
+                "/vender <SIMBOLO> - Vender posición abierta\n"
+                "/analisis - Ir al análisis"
+            )
+            await context.bot.send_message(chat_id=chat_id, text=help_text)
 
         elif command == "/vender":
             if len(parts) == 2:
@@ -446,17 +464,16 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                             client, symbol_to_sell, posiciones_abiertas,
                             transacciones_diarias, TELEGRAM_BOT_TOKEN,
                             TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE,
-                            bot_params.get(
-                                'TOTAL_BENEFICIO_ACUMULADO', 0.0),
+                            bot_params.get('TOTAL_BENEFICIO_ACUMULADO', 0.0),
                             bot_params, config_manager)
                 else:
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        f"❌ Símbolo {symbol_to_sell} no reconocido")
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"❌ Símbolo {symbol_to_sell} no reconocido")
             else:
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    "❌ Uso: /vender <SIMBOLO_USDT>")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Uso: /vender <SIMBOLO_USDT>")
 
         elif command == "/beneficio_diario":
             hoy = datetime.now().strftime("%Y-%m-%d")
@@ -469,82 +486,53 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                     for doc in docs:
                         trans = doc.to_dict()
                         if trans.get('timestamp', '').startswith(hoy):
-                            beneficio_dia += trans.get(
-                                'ganancia_usdt', 0.0)
+                            beneficio_dia += trans.get('ganancia_usdt', 0.0)
                 except Exception as e:
-                    logging.error(
-                        f"Error calculando beneficio diario: {e}")
+                    logging.error(f"Error calculando beneficio diario: {e}")
                 eur_rate = binance_utils.obtener_precio_eur(client)
                 beneficio_eur = beneficio_dia / eur_rate if eur_rate else 0.0
                 if beneficio_eur > 0:
                     emoji = "👍"
                 else:
                     emoji = "💩"
-                telegram_handler.send_telegram_message(
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                    f"📊 <b>Beneficio del día {hoy}</b>:\n"
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"📊 <b>Beneficio del día {hoy}</b>:\n"
                     f"  {emoji}  <b>{beneficio_dia:.2f} USDT</b>\n"
-                    f"  {emoji}  <b>{beneficio_eur:.2f} EUR</b>"
-                )
+                    f"  {emoji}  <b>{beneficio_eur:.2f} EUR</b>",
+                    parse_mode='HTML')
 
         elif command == "/posiciones_actuales":
             with shared_data_lock:
-                telegram_handler.send_current_positions_summary(
-                    client, posiciones_abiertas,
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                # Implementación simplificada para PTB v20
+                msg = "⟨Posiciones Actuales⟩\n\n"
+                for symbol, data in posiciones_abiertas.items():
+                    msg += f"- {symbol}: {data['cantidad']} @ {data['precio_compra']:.2f}\n"
+                if not msg.strip():
+                    msg = "No hay posiciones abiertas."
+                await context.bot.send_message(chat_id=chat_id, text=msg)
 
         elif command == "/analisis":
-            telegram_handler.send_inline_url_button(
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                "Ir al análisis",
-                "https://automecanicbibotuno.netlify.app")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Ir al análisis",
+                reply_markup={'inline_keyboard': [[{'text': 'Análisis', 'url': 'https://automecanicbibotuno.netlify.app'}]]})
 
         else:
-            telegram_handler.send_telegram_message(
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                "Comando desconocido. Usa /help para ver los disponibles.")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Comando desconocido. Usa /help para ver los disponibles.")
 
     except ValueError:
-        telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-            "❌ Valor inválido. Asegúrate de usar números correctos.")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ Valor inválido. Asegúrate de usar números correctos.")
     except Exception as ex:
         logging.error(
             f"Error procesando comando '{text}': {ex}", exc_info=True)
-        telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-            f"❌ Error interno al procesar comando: {ex}")
-
-
-def enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio):
-    """
-    Envía un resumen compacto al chat de Telegram.
-    """
-    # Construimos el mensaje
-    msg = "📊 <b>Resumen del ciclo:</b>\n"
-    for symbol, data in resumen_dict.items():
-        estado = "📈 TENDENCIA" if not data['en_rango'] else "🔀 RANGO"
-        msg += f"• {symbol}: {estado} | ADX: {data['adx']:.1f} | Ancho: {data['band_width']:.3f}\n"
-
-        msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
-        msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
-        msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
-
-    telegram_handler.send_telegram_message(
-        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
-
-
-def telegram_listener(stop_event):
-    while not stop_event.is_set():
-        try:
-            handle_telegram_commands()
-            time.sleep(TELEGRAM_LISTEN_INTERVAL)
-        except Exception as e:
-            logging.error(f"Error hilo Telegram: {e}")
-
-# ------------------------------------------------------------------
-#  FUNCIÓN INDICADORES (nueva)
-# ------------------------------------------------------------------
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ Error interno al procesar comando: {ex}")
 
 
 def indicadores(symbol):
@@ -559,8 +547,6 @@ def indicadores(symbol):
     vol_ratio = vols[-1] / (np.mean(vols[-20:]) + 1e-8)
     price = closes[-1]
     return price, rsi, ema_fast, ema_slow, vol_ratio
-
-    # ---función principal del bot comenzado por el usuario
 
 
 def ejecutar_optimizacion_ia():
@@ -597,6 +583,8 @@ def ejecutar_optimizacion_ia():
         else:
             msg = "📉 Optimización IA: No se ha retocado nada (valores óptimos actuales)."
 
+        # Enviar a Telegram usando directamente el bot
+        import telegram_handler
         telegram_handler.send_telegram_message(
             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
 
@@ -607,6 +595,7 @@ def ejecutar_optimizacion_ia():
 
     except Exception as e:
         logging.error(f"❌ Error en optimización IA: {e}")
+        import telegram_handler
         telegram_handler.send_telegram_message(
             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
             f"❌ Error en optimización IA: {str(e)[:200]}")
@@ -642,13 +631,76 @@ def generar_csv_desde_firestore():
     import pandas as pd
     pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
     logging.info(f"✅ CSV generado con {len(data)} transacciones")
-# ✅ NUEVO main() único
-
-# bot.py – main() definitivo y funcional
 
 
-def iniciar_bot_telegram():
-    # Crea una instancia de la aplicación
+def enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio):
+    """
+    Envía un resumen compacto al chat de Telegram.
+    """
+    # Construimos el mensaje
+    msg = "📊 <b>Resumen del ciclo:</b>\n"
+    for symbol, data in resumen_dict.items():
+        estado = "📈 TENDENCIA" if not data['en_rango'] else "🔀 RANGO"
+        msg += f"• {symbol}: {estado} | ADX: {data['adx']:.1f} | Ancho: {data['band_width']:.3f}\n"
+
+        msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
+        msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
+        msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
+
+    import telegram_handler
+    telegram_handler.send_telegram_message(
+        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+# ------------------------------------------------------------------
+#  FUNCIÓN PRINCIPAL DE RAILWAY
+# ------------------------------------------------------------------
+
+
+async def main():
+    """
+    Función principal async para Railway.
+    Inicia el bot de Telegram en un hilo separado y comienza el trading.
+    """
+    logging.info("🚀 Iniciando bot en Railway...")
+
+    # Inicia el bot de Telegram en un hilo separado
+    telegram_thread = threading.Thread(
+        target=asyncio.run,
+        args=(run_telegram_bot(),),
+        daemon=True
+    )
+    telegram_thread.start()
+
+    logging.info("🤖 Bot de Telegram iniciado")
+
+    # Scheduler IA (una sola vez)
+    scheduler = BackgroundScheduler(timezone=pytz.UTC)
+    scheduler.add_job(
+        ejecutar_optimizacion_ia,
+        trigger='cron',
+        hour=2,
+        minute=0,
+        timezone=pytz.UTC
+    )
+    scheduler.start()
+    logging.info("📅 Scheduler IA activado a las 02:00 UTC")
+
+    # Arranca el trading en otro hilo
+    trading_thread = threading.Thread(target=trading_loop, daemon=True)
+    trading_thread.start()
+
+    # Mantener el bot activo
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("🛑 Bot detenido por el usuario.")
+
+
+async def run_telegram_bot():
+    """
+    Ejecuta el bot de Telegram con polling.
+    """
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Añade manejadores
@@ -660,47 +712,25 @@ def iniciar_bot_telegram():
         "set_rango_rsi", handle_telegram_commands))
     application.add_handler(CommandHandler("start", handle_telegram_commands))
     application.add_handler(CommandHandler("help", handle_telegram_commands))
-    # Agrega otros comandos que necesites aquí
+    application.add_handler(CommandHandler(
+        "get_params", handle_telegram_commands))
+    application.add_handler(CommandHandler("csv", handle_telegram_commands))
+    application.add_handler(CommandHandler(
+        "beneficio", handle_telegram_commands))
+    application.add_handler(CommandHandler(
+        "beneficio_diario", handle_telegram_commands))
+    application.add_handler(CommandHandler(
+        "posiciones_actuales", handle_telegram_commands))
+    application.add_handler(CommandHandler("vender", handle_telegram_commands))
+    application.add_handler(CommandHandler(
+        "analisis", handle_telegram_commands))
 
-    # Inicia el bot
-    application.run_polling()
+    # Para cualquier otro comando no especificado
+    application.add_handler(MessageHandler(
+        filters.COMMAND, handle_telegram_commands))
 
-# Modifica el main() para incluir el bot de Telegram
-
-    logging.info("🚀 Iniciando bot...")
-
-
-def main():
-    # 1. Logs iniciales
-    logging.info("🚀 Iniciando bot...")
-
-    # Inicia el bot de Telegram en un hilo separado
-    telegram_thread = threading.Thread(
-        target=iniciar_bot_telegram, daemon=True)
-    telegram_thread.start()
-
-    # 2. Scheduler IA (una sola vez)
-    scheduler = BackgroundScheduler(timezone=pytz.UTC)
-    scheduler.add_job(
-        'bot:ejecutar_optimizacion_ia',
-        trigger='cron',
-        hour=2,
-        minute=0,
-        timezone=pytz.UTC
-    )
-    scheduler.start()
-    logging.info("📅 Scheduler IA activado a las 02:00 UTC")
-
-    # 3. Arrancar el trading en otro hilo
-    trading_thread = threading.Thread(target=trading_loop, daemon=True)
-    trading_thread.start()
-
-    # 4. Entrar al bucle infinito de trading
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logging.info("🛑 Bot detenido por el usuario.")
+    logging.info("🤖 Iniciando bot de Telegram con polling...")
+    await application.run_polling()
 
 
 def trading_loop():
@@ -740,7 +770,9 @@ def trading_loop():
             if ultima_fecha_informe_enviado is None or hoy != ultima_fecha_informe_enviado:
                 # Si ya había una fecha previa, toca cerrar y reportar el día anterior.
                 if ultima_fecha_informe_enviado is not None:
-                    telegram_handler.send_telegram_message(  # Notifica en Telegram que se preparará el informe del día terminado.
+                    import telegram_handler
+                    # Notifica en Telegram que se preparará el informe del día terminado.
+                    telegram_handler.send_telegram_message(
                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                         # Mensaje indicando la fecha del informe.
                         f"📊 Preparando informe del día {ultima_fecha_informe_enviado}")
@@ -795,9 +827,11 @@ def trading_loop():
                     if symbol in posiciones_abiertas:  # Si aún figura como posición abierta...
                         # Elimina la posición de la estructura en memoria.
                         del posiciones_abiertas[symbol]
+                        import position_manager
                         position_manager.save_open_positions_debounced(  # Guarda las posiciones a disco de forma diferida/optimizada.
                             # Pasa el diccionario actualizado.
                             posiciones_abiertas)
+                        import telegram_handler
                         telegram_handler.send_telegram_message(  # Notifica por Telegram que se ha eliminado la posición por saldo insuficiente.
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                             # Mensaje con el símbolo eliminado.
@@ -805,7 +839,8 @@ def trading_loop():
 
  # 7. Solo ejecuta el ciclo si ha pasado INTERVALO segundos
             # Comprueba si ya tocaba correr el ciclo principal según el intervalo.
-            if (time.time() - last_trading_check_time) >= INTERVALO:
+            last_trading_check_time_global = last_trading_check_time
+            if (time.time() - last_trading_check_time_global) >= INTERVALO:
                 # Log de inicio de un nuevo ciclo de trading.
                 logging.info("Iniciando ciclo de trading principal...")
 # ------------------------------------------------------------------
@@ -1140,6 +1175,7 @@ def trading_loop():
                 # Sección crítica antes de enviar (por si otro hilo también publicara).
                 with shared_data_lock:
                     try:  # Intenta enviar el resumen del ciclo.
+                        import telegram_handler
                         telegram_handler.send_telegram_message(  # Envío del mensaje general al chat de Telegram de monitoreo.
                             # Pasa token, chat y contenido.
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
@@ -1166,26 +1202,17 @@ def trading_loop():
         logging.info("KeyboardInterrupt detectado. Terminando bot...")
         # Señaliza al hilo de Telegram que debe detenerse.
         telegram_stop_event.set()
-        # Espera a que el hilo de Telegram termine su ejecución.
-        telegram_thread.join()
     except Exception as e:  # Captura cualquier otra excepción no controlada durante el ciclo.
         # Log detallado del error con stack trace.
         logging.error(f"Error crítico en bot.py: {e}", exc_info=True)
         with shared_data_lock:  # Protege el envío de mensajes concurrentes.
+            import telegram_handler
             telegram_handler.send_telegram_message(  # Envía un mensaje de error crítico con saldos para diagnóstico.
                 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                 # Incluye saldos y posiciones formateadas.
                 f"❌ Error crítico: {e}{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
-        # Señaliza al hilo de Telegram que debe detenerse tras el error.
-        telegram_stop_event.set()
-        # Espera su finalización para salir de forma limpia.
-        telegram_thread.join()
 
-
-# Punto de entrada del script cuando se ejecuta directamente.
-# ✅
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("¡Bot activo!")
 
 if __name__ == "__main__":
-    main()
+    # Railway espera una función asíncrona como entrada principal
+    asyncio.run(main())
