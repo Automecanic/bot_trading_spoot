@@ -649,38 +649,31 @@ def generar_csv_desde_firestore():
 
 
 def main():
-    # 1. Scheduler IA – 02:00 UTC diario
-    scheduler = BackgroundScheduler()
-    # Reemplaza TODAS las líneas que tengan `scheduler.add_job(...)` por este bloque
-    scheduler = BackgroundScheduler(
-        timezone=pytz.UTC  # ✅ Usa objeto pytz
-    )
+    # 1. Logs iniciales
+    logging.info("🚀 Iniciando bot...")
+
+    # 2. Scheduler IA (una sola vez)
+    scheduler = BackgroundScheduler(timezone=pytz.UTC)
     scheduler.add_job(
         'bot:ejecutar_optimizacion_ia',
         trigger='cron',
         hour=2,
         minute=0,
-        timezone=pytz.UTC  # ✅ Mismo objeto pytz
+        timezone=pytz.UTC
     )
     scheduler.start()
     logging.info("📅 Scheduler IA activado a las 02:00 UTC")
 
-    # 2. Bot de Telegram – PTB v20
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    # Handlers correctos
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.COMMAND,
-                    handle_telegram_commands))  # /comando
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,
-                                   handle_telegram_commands))  # texto y botones
-
-    # 3. Trading loop
+    # 3. Arrancar el trading en otro hilo
     trading_thread = threading.Thread(target=trading_loop, daemon=True)
     trading_thread.start()
 
-    # 4. Arrancar
-    app.run_polling()
+    # 4. Entrar al bucle infinito de trading
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("🛑 Bot detenido por el usuario.")
 
 
 def trading_loop():
