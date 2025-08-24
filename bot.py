@@ -15,7 +15,6 @@ VERSIÓN COMPLETA:
 import os
 import time
 import json
-import csv
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -648,13 +647,36 @@ def generar_csv_desde_firestore():
 # bot.py – main() definitivo y funcional
 
 
+def iniciar_bot_telegram():
+    # Crea una instancia de la aplicación
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    # Añade manejadores
+    application.add_handler(CommandHandler(
+        "toggle_rango", handle_telegram_commands))
+    application.add_handler(CommandHandler(
+        "set_rango_params", handle_telegram_commands))
+    application.add_handler(CommandHandler(
+        "set_rango_rsi", handle_telegram_commands))
+    application.add_handler(CommandHandler("start", handle_telegram_commands))
+    application.add_handler(CommandHandler("help", handle_telegram_commands))
+    # Agrega otros comandos que necesites aquí
+
+    # Inicia el bot
+    application.run_polling()
+
+# Modifica el main() para incluir el bot de Telegram
+
+    logging.info("🚀 Iniciando bot...")
+
+
 def main():
     # 1. Logs iniciales
     logging.info("🚀 Iniciando bot...")
 
-# Inicia el bot de Telegram en un hilo separado
+    # Inicia el bot de Telegram en un hilo separado
     telegram_thread = threading.Thread(
-        target=telegram_listener, daemon=True)
+        target=iniciar_bot_telegram, daemon=True)
     telegram_thread.start()
 
     # 2. Scheduler IA (una sola vez)
