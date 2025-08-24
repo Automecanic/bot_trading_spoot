@@ -12,7 +12,6 @@ VERSIÓN COMPLETA:
 """
 
 # ------------------- IMPORTS -------------------
-from dotenv import load_dotenv
 import os
 import time
 import json
@@ -23,8 +22,6 @@ from datetime import datetime, timedelta
 import requests
 from binance.client import Client
 from binance.enums import *
-import numpy as np
-import pandas as pd  # Reemplazamos talib por pandas
 
 # ------------- IMPORTS DE MÓDULOS PROPIOS -------------
 import config_manager
@@ -34,15 +31,24 @@ import binance_utils
 import trading_logic
 import firestore_utils
 import reporting_manager
-import ai_optimizer
+import json
+import os
+# NUEVO módulo para detectar mercado lateral y operar en rango
 from range_trading import detectar_rango_lateral, estrategia_rango
-
-# Importaciones para Telegram y Scheduler
+# Importar el nuevo optimizador IA y scheduler
+from apscheduler.schedulers.background import BackgroundScheduler
+import ai_optimizer
+# bot.py
+import logging
+from datetime import datetime
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
+from ai_optimizer import run_optimization  # función que ejecuta Optuna
+# ===== FIX SCHEDULER TIMEZONE =====
 from apscheduler.schedulers.background import BackgroundScheduler
 from pytz import timezone
-import pytz
+import pytz  # Asegura que pytz esté instalado
+# ===================================
 
 # ----------------- CONFIGURACIÓN LOGGING -----------------
 logging.basicConfig(
@@ -50,28 +56,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# ----------------- FUNCIONES TÉCNICAS ALTERNATIVAS (sin talib) -----------------
-
-
-def calculate_ema(prices, period):
-    """Calcula EMA usando pandas"""
-    return pd.Series(prices).ewm(span=period, adjust=False).mean().iloc[-1]
-
-
-def calculate_rsi(prices, period=14):
-    """Calcula RSI usando pandas"""
-    delta = pd.Series(prices).diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs.iloc[-1]))
-
-
-# Al inicio del archivo, después de los imports
-load_dotenv()  # Carga las variables desde .env
 # ----------------- VARIABLES GLOBALES -----------------
 API_KEY = os.getenv("BINANCE_API_KEY")
-API_SECRET = os.getenv("BINANCE_SECRET")
+API_SECRET = os.getenv("BINANCE_API_SECRET")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OPEN_POSITIONS_FILE = "open_positions.json"
@@ -102,6 +89,7 @@ RANGO_RSI_SOBREVENTA = bot_params.get("RANGO_RSI_SOBREVENTA", 30)
 RANGO_RSI_SOBRECOMPRA = bot_params.get("RANGO_RSI_SOBRECOMPRA", 70)
 PARAMS = bot_params.get("symbols", {})
 
+
 # Cargar parámetros IA si existen
 try:
     with open('ai_params.json', 'r') as f:
@@ -114,6 +102,7 @@ except FileNotFoundError:
 # Asegurar persistencia
 config_manager.save_parameters(bot_params)
 
+
 # ----------------- CLIENTE BINANCE -----------------
 client = Client(API_KEY, API_SECRET, testnet=True,
                 requests_params={'timeout': 30})
@@ -122,6 +111,8 @@ client.API_URL = 'https://testnet.binance.vision/api'
 # ----------------- VARIABLES DE CONTROL -----------------
 posiciones_abiertas = position_manager.load_open_positions(
     STOP_LOSS_PORCENTAJE)
+last_update_id = 0
+TELEGRAM_LISTEN_INTERVAL = 5
 transacciones_diarias = []
 ultima_fecha_informe_enviado = None
 last_trading_check_time = 0
@@ -141,6 +132,7 @@ def cfg(symbol):
         "ema_slow": 21
     })
 
+
 # ------------------------------------------------------------------
 #  MANEJADOR DE COMANDOS TELEGRAM (completo) – incluye nuevos comandos
 # ------------------------------------------------------------------
@@ -148,29 +140,33 @@ def cfg(symbol):
 
 async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Versión PTB v20 que maneja todos los comandos de Telegram
+    Versión PTB v20 que hace **exactamente lo mismo** que tu función original.
     """
+    # 1. Extraemos datos del Update
     chat_id = str(update.effective_chat.id)
     text = update.message.text.strip()
 
-    # Seguridad: solo chat autorizado
+    # 2. Seguridad: solo chat autorizado
     if chat_id != TELEGRAM_CHAT_ID:
         await context.bot.send_message(
             chat_id=chat_id,
             text=f"⚠️ Comando recibido de chat no autorizado: {chat_id}")
         return
 
-    # Parseo de comandos
+    # 3. Parseo igual que antes
     parts = text.split()
     command = parts[0].lower()
 
-    # Variables globales
-    global bot_params, posiciones_abiertas, transacciones_diarias, \
+    # 4. Mismas variables globales
+    global last_update_id, bot_params, posiciones_abiertas, transacciones_diarias, \
         INTERVALO, RIESGO_POR_OPERACION_PORCENTAJE, TAKE_PROFIT_PORCENTAJE, \
         STOP_LOSS_PORCENTAJE, TRAILING_STOP_PORCENTAJE, EMA_CORTA_PERIODO, \
         EMA_MEDIA_PERIODO, EMA_LARGA_PERIODO, RSI_PERIODO, RSI_UMBRAL_SOBRECOMPRA, \
         BREAKEVEN_PORCENTAJE
 
+    # 5. Copia literal de tu lógica, pero:
+    #    - reemplazamos telegram_handler.send_telegram_message(...)
+    #      por  await context.bot.send_message(...)
     try:
         # ---------- 1. PARÁMETROS DE ESTRATEGIA ----------
         if command == "/set_intervalo":
@@ -200,20 +196,19 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text="❌ Uso: /set_riesgo <decimal_ej_0.01>")
-
         elif command == "/set_tp":
             if len(parts) == 2:
                 nuevo = float(parts[1])
                 with shared_data_lock:
                     bot_params['TAKE_PROFIT_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ TAKE PROFIT a {nuevo:.4f}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ TAKE PROFIT a {nuevo:.4f}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_tp <decimal_ej_0.03>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_tp <decimal_ej_0.03>")
 
         elif command == "/set_sl_fijo":
             if len(parts) == 2:
@@ -221,13 +216,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['STOP_LOSS_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ STOP LOSS FIJO a {nuevo:.4f}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ STOP LOSS FIJO a {nuevo:.4f}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_sl_fijo <decimal_ej_0.02>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_sl_fijo <decimal_ej_0.02>")
 
         elif command == "/set_tsl":
             if len(parts) == 2:
@@ -235,19 +230,16 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['TRAILING_STOP_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ TRAILING STOP a {nuevo:.4f}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ TRAILING STOP a {nuevo:.4f}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_tsl <decimal_ej_0.015>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_tsl <decimal_ej_0.015>")
 
         elif command == "/optimizar_ahora":
             ejecutar_optimizacion_ia()
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="✅ Optimización IA iniciada")
 
         elif command == "/set_breakeven_porcentaje":
             if len(parts) == 2:
@@ -255,13 +247,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['BREAKEVEN_PORCENTAJE'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ BREAKEVEN a {nuevo:.4f}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ BREAKEVEN a {nuevo:.4f}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_breakeven_porcentaje <decimal_ej_0.005>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_breakeven_porcentaje <decimal_ej_0.005>")
 
         # ---------- 2. PARÁMETROS DE INDICADORES ----------
         elif command == "/set_ema_corta_periodo":
@@ -270,13 +262,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['EMA_CORTA_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ EMA CORTA período a {nuevo}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ EMA CORTA período a {nuevo}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_ema_corta_periodo <entero>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_ema_corta_periodo <entero>")
 
         elif command == "/set_ema_media_periodo":
             if len(parts) == 2:
@@ -284,13 +276,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['EMA_MEDIA_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ EMA MEDIA período a {nuevo}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ EMA MEDIA período a {nuevo}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_ema_media_periodo <entero>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_ema_media_periodo <entero>")
 
         elif command == "/set_ema_larga_periodo":
             if len(parts) == 2:
@@ -298,13 +290,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['EMA_LARGA_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ EMA LARGA período a {nuevo}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ EMA LARGA período a {nuevo}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_ema_larga_periodo <entero>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_ema_larga_periodo <entero>")
 
         elif command == "/set_rsi_periodo":
             if len(parts) == 2:
@@ -312,13 +304,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['RSI_PERIODO'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ RSI período a {nuevo}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ RSI período a {nuevo}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_rsi_periodo <entero>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_rsi_periodo <entero>")
 
         elif command == "/set_rsi_umbral":
             if len(parts) == 2:
@@ -326,13 +318,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 with shared_data_lock:
                     bot_params['RSI_UMBRAL_SOBRECOMPRA'] = nuevo
                     config_manager.save_parameters(bot_params)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ RSI umbral sobrecompra a {nuevo}")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"✅ RSI umbral sobrecompra a {nuevo}")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_rsi_umbral <entero>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_rsi_umbral <entero>")
 
         # ---------- 3. PARÁMETROS DE RANGO ----------
         elif command == "/set_rango_params":
@@ -344,17 +336,17 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         bot_params['RANGO_PERIODO_ANALISIS'] = periodo
                         bot_params['RANGO_UMBRAL_ATR'] = umbral
                         config_manager.save_parameters(bot_params)
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"✅ RANGO período={periodo}, umbral={umbral}")
+                    telegram_handler.send_telegram_message(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                        f"✅ RANGO período={periodo}, umbral={umbral}")
                 except ValueError:
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text="❌ Uso: /set_rango_params <periodo> <umbral>")
+                    telegram_handler.send_telegram_message(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                        "❌ Uso: /set_rango_params <periodo> <umbral>")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_rango_params <periodo> <umbral>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_rango_params <periodo> <umbral>")
 
         elif command == "/set_rango_rsi":
             if len(parts) == 3:
@@ -365,17 +357,17 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         bot_params['RANGO_RSI_SOBREVENTA'] = sv
                         bot_params['RANGO_RSI_SOBRECOMPRA'] = sc
                         config_manager.save_parameters(bot_params)
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"✅ RSI rango → sobreventa={sv}, sobrecompra={sc}")
+                    telegram_handler.send_telegram_message(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                        f"✅ RSI rango → sobreventa={sv}, sobrecompra={sc}")
                 except ValueError:
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text="❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
+                    telegram_handler.send_telegram_message(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                        "❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /set_rango_rsi <sobreventa> <sobrecompra>")
 
         elif command == "/toggle_rango":
             with shared_data_lock:
@@ -383,9 +375,9 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                     'RANGO_OPERAR', True)
                 config_manager.save_parameters(bot_params)
             estado = "ACTIVADO" if bot_params['RANGO_OPERAR'] else "DESACTIVADO"
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"✅ Operar en rango lateral {estado}")
+            telegram_handler.send_telegram_message(
+                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                f"✅ Operar en rango lateral {estado}")
 
         # ---------- 4. COMANDOS CLÁSICOS (sin cambios) ----------
         elif command == "/start" or command == "/menu":
@@ -404,16 +396,13 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         msg += f"- {k}: {v:.4f}\n"
                     else:
                         msg += f"- {k}: {v}\n"
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=msg,
-                parse_mode='HTML')
+            telegram_handler.send_telegram_message(
+                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
 
         elif command == "/csv":
             with shared_data_lock:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="Generando CSV...")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "Generando CSV...")
                 reporting_manager.generar_y_enviar_csv_ahora(
                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
@@ -426,19 +415,24 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                         firestore_utils.FIRESTORE_TRANSACTIONS_COLLECTION_PATH).stream()
                     for doc in docs:
                         trans = doc.to_dict()
-                        beneficio_total += trans.get('ganancia_usdt', 0.0)
+                        beneficio_total += trans.get(
+                            'ganancia_usdt', 0.0)
                 except Exception as e:
-                    logging.error(f"Error calculando beneficio total: {e}")
+                    logging.error(
+                        f"Error calculando beneficio total: {e}")
 
                 eur_rate = binance_utils.obtener_precio_eur(client)
                 beneficio_eur = beneficio_total / eur_rate if eur_rate else 0.0
-                emoji = "👍" if beneficio_eur > 0 else "💩"
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"📈 <b>Beneficio Total Acumulado (TODAS):</b>\n"
+                if beneficio_eur > 0:
+                    emoji = "👍"
+                else:
+                    emoji = "💩"
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"📈 <b>Beneficio Total Acumulado (TODAS):</b>\n"
                     f"   {emoji} <b>{beneficio_total:.2f} USDT</b>\n"
-                    f"   {emoji} <b>{beneficio_eur:.2f} EUR</b>",
-                    parse_mode='HTML')
+                    f"   {emoji} <b>{beneficio_eur:.2f} EUR</b>"
+                )
 
         elif command == "/help":
             telegram_handler.send_help_message(
@@ -453,19 +447,17 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                             client, symbol_to_sell, posiciones_abiertas,
                             transacciones_diarias, TELEGRAM_BOT_TOKEN,
                             TELEGRAM_CHAT_ID, OPEN_POSITIONS_FILE,
-                            bot_params.get('TOTAL_BENEFICIO_ACUMULADO', 0.0),
+                            bot_params.get(
+                                'TOTAL_BENEFICIO_ACUMULADO', 0.0),
                             bot_params, config_manager)
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"✅ Orden de venta enviada para {symbol_to_sell}")
                 else:
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"❌ Símbolo {symbol_to_sell} no reconocido")
+                    telegram_handler.send_telegram_message(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                        f"❌ Símbolo {symbol_to_sell} no reconocido")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="❌ Uso: /vender <SIMBOLO_USDT>")
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    "❌ Uso: /vender <SIMBOLO_USDT>")
 
         elif command == "/beneficio_diario":
             hoy = datetime.now().strftime("%Y-%m-%d")
@@ -478,19 +470,23 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                     for doc in docs:
                         trans = doc.to_dict()
                         if trans.get('timestamp', '').startswith(hoy):
-                            beneficio_dia += trans.get('ganancia_usdt', 0.0)
+                            beneficio_dia += trans.get(
+                                'ganancia_usdt', 0.0)
                 except Exception as e:
-                    logging.error(f"Error calculando beneficio diario: {e}")
-
+                    logging.error(
+                        f"Error calculando beneficio diario: {e}")
                 eur_rate = binance_utils.obtener_precio_eur(client)
                 beneficio_eur = beneficio_dia / eur_rate if eur_rate else 0.0
-                emoji = "👍" if beneficio_eur > 0 else "💩"
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"📊 <b>Beneficio del día {hoy}</b>:\n"
+                if beneficio_eur > 0:
+                    emoji = "👍"
+                else:
+                    emoji = "💩"
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    f"📊 <b>Beneficio del día {hoy}</b>:\n"
                     f"  {emoji}  <b>{beneficio_dia:.2f} USDT</b>\n"
-                    f"  {emoji}  <b>{beneficio_eur:.2f} EUR</b>",
-                    parse_mode='HTML')
+                    f"  {emoji}  <b>{beneficio_eur:.2f} EUR</b>"
+                )
 
         elif command == "/posiciones_actuales":
             with shared_data_lock:
@@ -505,23 +501,50 @@ async def handle_telegram_commands(update: Update, context: ContextTypes.DEFAULT
                 "https://automecanicbibotuno.netlify.app")
 
         else:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="Comando desconocido. Usa /help para ver los disponibles.")
+            telegram_handler.send_telegram_message(
+                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                "Comando desconocido. Usa /help para ver los disponibles.")
 
     except ValueError:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="❌ Valor inválido. Asegúrate de usar números correctos.")
+        telegram_handler.send_telegram_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+            "❌ Valor inválido. Asegúrate de usar números correctos.")
     except Exception as ex:
         logging.error(
             f"Error procesando comando '{text}': {ex}", exc_info=True)
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"❌ Error interno al procesar comando: {ex}")
+        telegram_handler.send_telegram_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+            f"❌ Error interno al procesar comando: {ex}")
+
+
+def enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio):
+    """
+    Envía un resumen compacto al chat de Telegram.
+    """
+    # Construimos el mensaje
+    msg = "📊 <b>Resumen del ciclo:</b>\n"
+    for symbol, data in resumen_dict.items():
+        estado = "📈 TENDENCIA" if not data['en_rango'] else "🔀 RANGO"
+        msg += f"• {symbol}: {estado} | ADX: {data['adx']:.1f} | Ancho: {data['band_width']:.3f}\n"
+
+        msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
+        msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
+        msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
+
+    telegram_handler.send_telegram_message(
+        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+
+def telegram_listener(stop_event):
+    while not stop_event.is_set():
+        try:
+            handle_telegram_commands()
+            time.sleep(TELEGRAM_LISTEN_INTERVAL)
+        except Exception as e:
+            logging.error(f"Error hilo Telegram: {e}")
 
 # ------------------------------------------------------------------
-#  FUNCIÓN INDICADORES (ahora sin talib)
+#  FUNCIÓN INDICADORES (nueva)
 # ------------------------------------------------------------------
 
 
@@ -531,56 +554,70 @@ def indicadores(symbol):
         symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=50)
     closes = np.array([float(k[4]) for k in klines])
     vols = np.array([float(k[5]) for k in klines])
-
-    # Calcular indicadores usando pandas en lugar de talib
-    rsi = calculate_rsi(closes, 14)
-    ema_fast = calculate_ema(closes, cfg(symbol)["ema_fast"])
-    ema_slow = calculate_ema(closes, cfg(symbol)["ema_slow"])
+    rsi = talib.RSI(closes, timeperiod=14)[-1]
+    ema_fast = talib.EMA(closes, timeperiod=cfg(symbol)["ema_fast"])[-1]
+    ema_slow = talib.EMA(closes, timeperiod=cfg(symbol)["ema_slow"])[-1]
     vol_ratio = vols[-1] / (np.mean(vols[-20:]) + 1e-8)
     price = closes[-1]
-
     return price, rsi, ema_fast, ema_slow, vol_ratio
 
-# ------------------------------------------------------------------
-#  FUNCIONES DE OPTIMIZACIÓN Y REPORTING
-# ------------------------------------------------------------------
+    # ---función principal del bot comenzado por el usuario
 
 
 def ejecutar_optimizacion_ia():
-    """Genera CSV, ejecuta optimización IA y envía informe."""
-    db = firestore_utils.get_firestore_db()
-    if not db:
-        telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-            "❌ No se pudo conectar a Firestore para optimizar.")
-        return
+    """
+    Genera CSV, ejecuta optimización IA y envía informe por Telegram.
+    """
+    logging.info("📊 Generando CSV desde Firestore...")
+    generar_csv_desde_firestore()
 
-    FIRESTORE_PATH = f"artifacts/{os.getenv('__app_id', 'default-app-id')}/public/data/transactions_history"
-    docs = db.collection(FIRESTORE_PATH).stream()
-    data = [
-        {
-            'TAKE_PROFIT_PORCENTAJE': d.get('TAKE_PROFIT_PORCENTAJE', 0.03),
-            'TRAILING_STOP_PORCENTAJE': d.get('TRAILING_STOP_PORCENTAJE', 0.015),
-            'RIESGO_POR_OPERACION_PORCENTAJE': d.get('RIESGO_POR_OPERACION_PORCENTAJE', 0.01),
-            'ganancia_usdt': d.get('ganancia_usdt', 0)
-        }
-        for doc in docs
-        if (d := doc.to_dict())
-    ]
-    if not data:
+    logging.info("🤖 Ejecutando optimización IA...")
+    try:
+        import ai_optimizer
+        ai_optimizer.run()
+
+        # Cargar parámetros anteriores para comparar
+        import config_manager
+        params_anteriores = config_manager.load_parameters()
+
+        # Cargar nuevos parámetros
+        with open('ai_params.json', 'r') as f:
+            nuevos_params = json.load(f)
+
+        # Comparar cambios
+        cambios = []
+        for key in ["TAKE_PROFIT_PORCENTAJE", "TRAILING_STOP_PORCENTAJE", "RIESGO_POR_OPERACION_PORCENTAJE"]:
+            anterior = params_anteriores.get(key, 0)
+            nuevo = nuevos_params.get(key, 0)
+            if abs(anterior - nuevo) > 0.0001:  # Umbral de cambio mínimo
+                cambios.append(f"• {key}: {anterior:.4f} → {nuevo:.4f}")
+
+        # Enviar informe
+        if cambios:
+            msg = "🤖 Optimización IA completada:\n" + "\n".join(cambios)
+        else:
+            msg = "📉 Optimización IA: No se ha retocado nada (valores óptimos actuales)."
+
+        telegram_handler.send_telegram_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+        # Aplicar cambios en memoria
+        with shared_data_lock:
+            bot_params.update(nuevos_params)
+            config_manager.save_parameters(bot_params)
+
+    except Exception as e:
+        logging.error(f"❌ Error en optimización IA: {e}")
         telegram_handler.send_telegram_message(
             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-            "⚠️ No hay transacciones para optimizar.")
-        return
-    pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
-    ai_optimizer.run()
-    telegram_handler.send_telegram_message(
-        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-        "✅ Optimización IA ejecutada.")
+            f"❌ Error en optimización IA: {str(e)[:200]}")
 
 
 def generar_csv_desde_firestore():
-    """Genera transacciones_historico.csv desde Firestore."""
+    """
+    Genera transacciones_historico.csv desde Firestore.
+    Se ejecuta antes de la optimización IA.
+    """
     db = firestore_utils.get_firestore_db()
     if not db:
         logging.error("❌ No se pudo conectar a Firestore para generar CSV")
@@ -603,27 +640,22 @@ def generar_csv_desde_firestore():
         logging.warning("⚠️ No hay transacciones para generar CSV")
         return
 
+    import pandas as pd
     pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
     logging.info(f"✅ CSV generado con {len(data)} transacciones")
+# ✅ NUEVO main() único
 
-# ------------------------------------------------------------------
-#  FUNCIÓN PRINCIPAL DEL BOT
-# ------------------------------------------------------------------
+# bot.py – main() definitivo y funcional
 
 
 def main():
     # 1. Logs iniciales
     logging.info("🚀 Iniciando bot...")
 
-    # 2. Verificar credenciales
-    if not all([API_KEY, API_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
-        logging.error("❌ Faltan variables de entorno necesarias")
-        return
-
-    # 3. Scheduler IA (una sola vez)
+    # 2. Scheduler IA (una sola vez)
     scheduler = BackgroundScheduler(timezone=pytz.UTC)
     scheduler.add_job(
-        ejecutar_optimizacion_ia,  # ✅ Corregido: referencia directa a la función
+        'bot:ejecutar_optimizacion_ia',
         trigger='cron',
         hour=2,
         minute=0,
@@ -632,271 +664,501 @@ def main():
     scheduler.start()
     logging.info("📅 Scheduler IA activado a las 02:00 UTC")
 
-    # 4. Arrancar el trading en otro hilo
+    # 3. Arrancar el trading en otro hilo
     trading_thread = threading.Thread(target=trading_loop, daemon=True)
     trading_thread.start()
-    logging.info("🔄 Trading loop iniciado en hilo separado")
 
-    # 5. Inicializar bot de Telegram
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    # Añadir manejador para todos los comandos
-    application.add_handler(MessageHandler(
-        filters.COMMAND, handle_telegram_commands))
-
-    # Añadir manejador para mensajes de texto (no comandos)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, handle_telegram_commands))
-
-    logging.info("🤖 Bot de Telegram inicializado")
-
-    # 6. Iniciar el bot (esto bloqueará el hilo principal)
+    # 4. Entrar al bucle infinito de trading
     try:
-        application.run_polling()
-    except Exception as e:
-        logging.error(f"❌ Error en el bot de Telegram: {e}", exc_info=True)
-    finally:
-        scheduler.shutdown()
-        logging.info("🛑 Bot detenido")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("🛑 Bot detenido por el usuario.")
 
 
 def trading_loop():
-    """Bucle principal de trading"""
+    # ← Copia todo el código anterior que estaba en el while True
+    # (líneas ~900-1150) y reemplaza `main()` antiguo por esta función
+
+    # Declara que se usarán/actualizarán estas variables globales.
     global last_trading_check_time, ultima_fecha_informe_enviado
 
     logging.info("Iniciando cliente Binance...")
-    try:
-        client.ping()
-        logging.info("✅ Conexión con Binance establecida")
-    except Exception as e:
-        logging.error(f"❌ Error conectando con Binance: {e}")
-        return
+    # Envía un ping a Binance para verificar conectividad y credenciales.
+    client.ping()
 
+    # 2. Carga las posiciones que estén abiertas
+    # Informa en el log que cargará posiciones abiertas.
     logging.info("Cargando posiciones abiertas...")
+    # Indica que se modificará la variable global de posiciones abiertas.
     global posiciones_abiertas
-    posiciones_abiertas = position_manager.load_open_positions(
+    posiciones_abiertas = position_manager.load_open_positions(  # Carga de almacenamiento persistente las posiciones abiertas.
+        # Pasa el porcentaje de stop-loss por defecto para validar/normalizar posiciones.
         STOP_LOSS_PORCENTAJE)
 
-    try:
+    try:  # Bloque principal protegido para capturar interrupciones/errores.
+        # Bucle infinito del ciclo de trading (hasta que se interrumpa manual o programáticamente).
         while True:
+            # Marca el instante de inicio del ciclo para gestionar el tiempo de espera.
             start_time_cycle = time.time()
 
-            # 1. Informe diario CSV (solo cuando cambia el día)
+# ------------------------------------------------------------------
+#   Informe diario CSV (solo cuando cambia el día)
+# ------------------------------------------------------------------
+
+# 5. Informe diario CSV (solo cuando cambia el día)
+            # Obtiene la fecha actual en formato YYYY-MM-DD como cadena.
             hoy = time.strftime("%Y-%m-%d")
+            # Si es el primer ciclo del día o cambió la fecha...
             if ultima_fecha_informe_enviado is None or hoy != ultima_fecha_informe_enviado:
+                # Si ya había una fecha previa, toca cerrar y reportar el día anterior.
                 if ultima_fecha_informe_enviado is not None:
-                    telegram_handler.send_telegram_message(
+                    telegram_handler.send_telegram_message(  # Notifica en Telegram que se preparará el informe del día terminado.
                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                        # Mensaje indicando la fecha del informe.
                         f"📊 Preparando informe del día {ultima_fecha_informe_enviado}")
-                    reporting_manager.generar_y_enviar_csv_ahora(
+                    reporting_manager.generar_y_enviar_csv_ahora(  # Genera el CSV diario y lo envía por Telegram.
+                        # Usa las credenciales/destino configurados.
                         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                # Actualiza la marca de fecha de último informe enviado al día actual.
                 ultima_fecha_informe_enviado = hoy
+                # Entra en sección crítica para modificar estructuras compartidas sin condiciones de carrera.
                 with shared_data_lock:
+                    # Vacía el registro de transacciones del nuevo día.
                     transacciones_diarias.clear()
+# ------------------------------------------------------------------
+#   limpia posiciones con saldo insuficiente
+# ------------------------------------------------------------------
 
-            # 2. Limpia posiciones con saldo insuficiente
-            with shared_data_lock:
+ # 6. Limpia posiciones con saldo insuficiente
+            with shared_data_lock:  # Bloquea el acceso concurrente a posiciones_abiertas y saldos.
+                # Prepara una lista de símbolos que se eliminarán tras la verificación.
                 symbols_to_remove = []
+                # Itera sobre una copia de items para poder borrar con seguridad.
                 for symbol, data in list(posiciones_abiertas.items()):
+                    # Si el símbolo ya no está en la lista de seguimiento activa...
                     if symbol not in SYMBOLS:
+                        # Lo marca para eliminar.
                         symbols_to_remove.append(symbol)
-                        continue
-
+                        continue  # Continúa con el siguiente símbolo.
+                    # Extrae el activo base (p. ej., BTC de BTCUSDT).
                     base_asset = symbol.replace("USDT", "")
-                    actual_balance = binance_utils.obtener_saldo_moneda(
+                    actual_balance = binance_utils.obtener_saldo_moneda(  # Obtiene el saldo actual del activo base en la cuenta.
+                        # Usa el cliente de Binance para consultar saldos.
                         client, base_asset)
+                    # Pide a Binance la información del símbolo (filtros, pasos, etc.).
                     info = client.get_symbol_info(symbol)
+                    # Inicializa la cantidad mínima permitida para operar.
                     min_qty = 0.0
-
+                    # Recorre los filtros del mercado del símbolo.
                     for f in info['filters']:
+                        # Busca el filtro de tamaño de lote, que define cantidades mínimas y pasos.
                         if f['filterType'] == 'LOT_SIZE':
+                            # Toma la cantidad mínima del filtro como flotante.
                             min_qty = float(f['minQty'])
+                            # Sale del bucle al encontrar el filtro relevante.
                             break
-
+                    # Define un umbral mínimo para considerar que existe posición/saldo.
                     threshold = max(min_qty, 1e-8)
+                    # Si el saldo real es inferior al mínimo operativo...
                     if actual_balance < threshold:
+                        # Marca el símbolo para eliminar de posiciones abiertas.
                         symbols_to_remove.append(symbol)
-
-                for symbol in symbols_to_remove:
-                    if symbol in posiciones_abiertas:
+                for symbol in symbols_to_remove:  # Recorre los símbolos que deben ser eliminados.
+                    if symbol in posiciones_abiertas:  # Si aún figura como posición abierta...
+                        # Elimina la posición de la estructura en memoria.
                         del posiciones_abiertas[symbol]
-                        position_manager.save_open_positions_debounced(
+                        position_manager.save_open_positions_debounced(  # Guarda las posiciones a disco de forma diferida/optimizada.
+                            # Pasa el diccionario actualizado.
                             posiciones_abiertas)
-                        telegram_handler.send_telegram_message(
+                        telegram_handler.send_telegram_message(  # Notifica por Telegram que se ha eliminado la posición por saldo insuficiente.
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                            # Mensaje con el símbolo eliminado.
                             f"🗑️ Posición {symbol} eliminada (saldo insuficiente)")
 
-            # 3. Ejecutar ciclo de trading si ha pasado el intervalo
+ # 7. Solo ejecuta el ciclo si ha pasado INTERVALO segundos
+            # Comprueba si ya tocaba correr el ciclo principal según el intervalo.
             if (time.time() - last_trading_check_time) >= INTERVALO:
+                # Log de inicio de un nuevo ciclo de trading.
                 logging.info("Iniciando ciclo de trading principal...")
-                last_trading_check_time = time.time()
+# ------------------------------------------------------------------
+#  datos globales y resumen (siempre disponibles)
+# ------------------------------------------------------------------
 
-                # 4. Datos globales (siempre disponibles)
+ # 8. Datos globales (siempre disponibles)
+                # Entra en sección crítica para leer saldos y posiciones de forma consistente.
                 with shared_data_lock:
-                    saldo_usdt_global = binance_utils.obtener_saldo_moneda(
-                        client, "USDT")
-                    total_capital_usdt_global = binance_utils.get_total_capital_usdt(
+                    saldo_usdt_global = binance_utils.obtener_saldo_moneda(  # Obtiene el saldo libre en USDT.
+                        client, "USDT")  # Consulta al cliente Binance.
+                    total_capital_usdt_global = binance_utils.get_total_capital_usdt(  # Calcula capital total (saldos + valor de posiciones) en USDT.
+                        # Usa posiciones abiertas actuales.
                         client, posiciones_abiertas)
+                    # Obtiene el tipo de cambio USDT→EUR (precio de referencia).
                     eur_usdt_rate = binance_utils.obtener_precio_eur(client)
-                    total_capital_eur_global = (
+                    total_capital_eur_global = (  # Calcula el capital total expresado en EUR.
                         total_capital_usdt_global / eur_usdt_rate
+                        # Evita división por cero si no hay tipo de cambio válido.
                         if eur_usdt_rate and eur_usdt_rate > 0 else 0
                     )
 
-                    general_message = (
+                    # Cabecera del informe
+                    general_message = (  # Inicializa el mensaje-resumen que se enviará por Telegram.
+                        # Hora del ciclo en formato HH:MM:SS.
                         f"📈 Resumen ciclo {datetime.now().strftime('%H:%M:%S')}\n"
+                        # Saldo USDT con 2 decimales.
                         f"💰 USDT libre: {saldo_usdt_global:.2f}\n"
+                        # Capital total en USDT.
                         f"💲 Total: {total_capital_usdt_global:.2f} USDT\n"
+                        # Capital total en EUR.
                         f"💶 Total: {total_capital_eur_global:.2f} EUR\n\n"
                     )
+# ------------------------------------------------------------------
+#   Recorre todos los símbolos
+# ------------------------------------------------------------------
 
-                # 5. Recorre todos los símbolos
+# 9. Recorre todos los símbolos
+                # Itera cada par/mercado a monitorear (p. ej., BTCUSDT, ETHUSDT, etc.).
                 for symbol in SYMBOLS:
+                    # Obtiene el activo base del símbolo para consultas de saldo.
                     base = symbol.replace("USDT", "")
-                    precio_actual = binance_utils.obtener_precio_actual(
+                    precio_actual = binance_utils.obtener_precio_actual(  # Consulta el último precio conocido del símbolo.
+                        # Usa el cliente de Binance para obtener datos de mercado.
                         client, symbol)
 
-                    # 6. Parámetros personalizados por símbolo
-                    cf = bot_params.get("symbols", {}).get(symbol, {
+# 10. Parámetros personalizados por símbolo
+                    cf = bot_params.get("symbols", {}).get(symbol, {  # Carga la configuración específica del símbolo o usa valores por defecto.
+                        # Porcentaje de stop-loss.
                         "stop_loss_pct": STOP_LOSS_PORCENTAJE,
+                        # Porcentaje de take-profit.
                         "take_profit_pct": TAKE_PROFIT_PORCENTAJE,
+                        # Porcentaje del trailing stop.
                         "trailing_stop_pct": TRAILING_STOP_PORCENTAJE,
+                        # Umbral para mover SL a break-even.
                         "breakeven_pct": BREAKEVEN_PORCENTAJE,
+                        # Umbral de RSI para compras (nomenclatura heredada).
                         "rsi_buy": RSI_UMBRAL_SOBRECOMPRA,
+                        # Factor de volumen para validar impulso.
                         "volume_factor": 1.5,
+                        # Periodo EMA rápida para tendencia.
                         "ema_fast": EMA_CORTA_PERIODO,
+                        # Periodo EMA media para tendencia.
                         "ema_slow": EMA_MEDIA_PERIODO
-                    })
+                    })  # Fin de la obtención de configuración.
 
-                    # 7. Detecta rango lateral
+ # 11. Detecta rango lateral
+                    # Lee si la operativa de rango está habilitada.
                     rango_activo = bot_params.get('RANGO_OPERAR', True)
-                    if rango_activo:
-                        en_rango, soporte, resistencia = detectar_rango_lateral(
+                    if rango_activo:  # Si está activada la lógica de rango...
+                        en_rango, soporte, resistencia = detectar_rango_lateral(  # Detecta si el precio está en rango y los niveles estimados.
                             client, symbol,
+                            # Número de velas para evaluar rango.
                             periodo=bot_params.get(
                                 'RANGO_PERIODO_ANALISIS', 20),
+                            # ADX límite para considerar poca tendencia.
                             adx_umbral=bot_params.get('RANGO_ADX_UMBRAL', 25),
+                            # Máximo ancho de bandas para rango.
                             band_width_max=bot_params.get(
                                 'RANGO_BAND_WIDTH_MAX', 0.05)
-                        )
-
-                        if en_rango:
-                            senal_rango = estrategia_rango(
+                        )  # Fin de la detección de rango.
+                        if en_rango:  # Si se considera que hay rango...
+                            senal_rango = estrategia_rango(  # Calcula la señal (COMPRA/VENTA/NEUTRO) basada en soporte/resistencia y RSI.
                                 client, symbol, soporte, resistencia,
-                                rsi=trading_logic.calcular_ema_rsi(
+                                rsi=trading_logic.calcular_ema_rsi(  # Reutiliza cálculo EMA/RSI para obtener RSI actual.
                                     client, symbol,
                                     cf["ema_fast"], cf["ema_slow"],
+                                    # Índice 3 corresponde al RSI retornado.
                                     EMA_LARGA_PERIODO, RSI_PERIODO)[3],
+                                # Umbral RSI sobreventa para compras en rango.
                                 rsi_sobreventa=bot_params.get(
                                     'RANGO_RSI_SOBREVENTA', 30),
+                                # Umbral RSI sobrecompra para ventas en rango.
                                 rsi_sobrecompra=bot_params.get(
                                     'RANGO_RSI_SOBRECOMPRA', 70)
-                            )
+                            )  # Fin de la evaluación de señal en rango.
 
-                            # 7.1 Compra en rango
+# ------------------------------------------------------------------
+#   Compra en rango o
+# ------------------------------------------------------------------
+
+# 11.1 Compra en rango
+                            # Condiciones para abrir compra en rango.
                             if senal_rango == 'COMPRA' and symbol not in posiciones_abiertas and saldo_usdt_global > 10:
-                                cantidad = trading_logic.calcular_cantidad_a_comprar(
+                                cantidad = trading_logic.calcular_cantidad_a_comprar(  # Calcula tamaño de posición según riesgo, SL y capital.
                                     client, saldo_usdt_global, precio_actual,
                                     cf["stop_loss_pct"], symbol,
                                     RIESGO_POR_OPERACION_PORCENTAJE, total_capital_usdt_global)
-                                if cantidad > 0:
-                                    with shared_data_lock:
-                                        orden = trading_logic.comprar(
+                                if cantidad > 0:  # Si la cantidad es operable...
+                                    with shared_data_lock:  # Bloquea para operar con seguridad.
+                                        orden = trading_logic.comprar(  # Lanza la orden de compra a mercado o límite según implementación.
                                             client, symbol, cantidad, posiciones_abiertas,
                                             cf["stop_loss_pct"], transacciones_diarias,
                                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                                            # Archivo donde persistir posiciones.
                                             OPEN_POSITIONS_FILE)
-                                    if orden:
-                                        general_message += f"🟢 COMPRA RANGO {symbol}\n"
+                                    if orden:  # Si la orden se ejecutó correctamente...
+                                        # Añade línea al informe general.
+                                        general_message += f"🟢 COMPRA RANGO {symbol}"
+                                    # Salta a siguiente símbolo (ya se tomó acción en rango).
                                     continue
+# ------------------------------------------------------------------
+#  Venta en rango
+# ------------------------------------------------------------------
 
-                            # 7.2 Venta en rango
+ # 11.2 Venta en rango
+                            # Condiciones para cerrar en resistencia dentro de rango.
                             elif senal_rango == 'VENTA' and symbol in posiciones_abiertas:
-                                cantidad_vender = binance_utils.ajustar_cantidad(
+                                cantidad_vender = binance_utils.ajustar_cantidad(  # Ajusta la cantidad a vender al step size permitido.
                                     binance_utils.obtener_saldo_moneda(
                                         client, base),
                                     binance_utils.get_step_size(client, symbol))
-                                if cantidad_vender > 0:
-                                    with shared_data_lock:
-                                        orden = trading_logic.vender(
+                                if cantidad_vender > 0:  # Si hay cantidad disponible para vender...
+                                    with shared_data_lock:  # Bloquea durante la operación de venta.
+                                        orden = trading_logic.vender(  # Ejecuta la orden de venta y actualiza estructuras y persistencia.
                                             client, symbol, cantidad_vender,
                                             posiciones_abiertas,
+                                            # Pasa acumulado para métricas.
                                             bot_params.get(
                                                 'TOTAL_BENEFICIO_ACUMULADO', 0.0),
                                             bot_params, transacciones_diarias,
                                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                                             OPEN_POSITIONS_FILE, config_manager,
+                                            # Etiqueta el motivo de la venta.
                                             motivo_venta="VENTA EN RANGO")
-                                        bot_params['TOTAL_BENEFICIO_ACUMULADO'] = bot_params.get(
+                                        bot_params['TOTAL_BENEFICIO_ACUMULADO'] = bot_params.get(  # Asegura clave presente aunque no cambie.
                                             'TOTAL_BENEFICIO_ACUMULADO', 0.0)
+                                        # Persiste la configuración/estadísticas del bot.
                                         config_manager.save_parameters(
                                             bot_params)
+                                    # Si la orden se envió/ejecutó...
                                     if orden:
-                                        general_message += f"🔴 VENTA RANGO {symbol}\n"
+                                        # Añade al informe el resultado de venta.
+                                        general_message += f"🔴 VENTA RANGO {symbol}"
+                                    # Salta al siguiente símbolo tras actuar en rango.
                                     continue
+# ------------------------------------------------------------------
+#  operación en tendencia
+# ------------------------------------------------------------------
 
-                    # 8. Operación en tendencia
-                    ema_corta, ema_media, ema_larga, rsi = trading_logic.calcular_ema_rsi(
+ # 12. Operación en tendencia
+                    ema_corta, ema_media, ema_larga, rsi = trading_logic.calcular_ema_rsi(  # Calcula EMAs y RSI para el símbolo actual.
                         client, symbol,
                         cf["ema_fast"], cf["ema_slow"],
+                        # Usa periodos configurados.
                         EMA_LARGA_PERIODO, RSI_PERIODO)
-
+                    # Si faltan datos para indicadores...
                     if any(v is None for v in (ema_corta, ema_media, ema_larga, rsi)):
-                        continue
+                        continue  # Omite este símbolo en este ciclo.
 
-                    # 9. Filtro de volumen
-                    klines = client.get_klines(
+ # 13. Filtro de volumen
+                    klines = client.get_klines(  # Solicita las últimas 20 velas de 1 hora para calcular volumen medio.
                         symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=20)
-                    vol_ratio = float(
+                    vol_ratio = float(  # Calcula el ratio de volumen: volumen última vela / volumen medio 20 velas.
                         klines[-1][5]) / (sum(float(k[5]) for k in klines[-20:]) / 20 + 1e-8)
 
+                    # Define condición de tendencia alcista por EMAs encadenadas.
                     tendencia_alcista = (
                         precio_actual > ema_corta > ema_media > ema_larga)
+# ------------------------------------------------------------------
+#  Lógica  ce compra
+# ------------------------------------------------------------------
 
-                    # 10. Lógica de compra
-                    comprar_cond = (
+ # 14. Lógica de compra
+                    comprar_cond = (  # Construye condición booleana para comprar en tendencia.
+                        # Requiere saldo mínimo en USDT.
                         saldo_usdt_global > 10 and
+                        # Debe existir estructura alcista de EMAs.
                         tendencia_alcista and
+                        # RSI por debajo del umbral definido para entrada.
                         rsi < cf["rsi_buy"] and
+                        # Volumen actual superior al factor de confirmación.
                         vol_ratio > cf["volume_factor"] and
+                        # Evita duplicar posiciones en el mismo símbolo.
                         symbol not in posiciones_abiertas
                     )
-
-                    if comprar_cond:
-                        cantidad = trading_logic.calcular_cantidad_a_comprar(
+                    if comprar_cond:  # Si se cumplen todos los criterios de compra...
+                        cantidad = trading_logic.calcular_cantidad_a_comprar(  # Calcula tamaño de la orden basado en riesgo y SL.
                             client, saldo_usdt_global, precio_actual,
                             cf["stop_loss_pct"], symbol,
                             RIESGO_POR_OPERACION_PORCENTAJE, total_capital_usdt_global)
-                        if cantidad > 0:
-                            with shared_data_lock:
-                                orden = trading_logic.comprar(
+                        if cantidad > 0:  # Solo si la cantidad cumple mínimos de exchange.
+                            with shared_data_lock:  # Protege actualización de estructuras compartidas.
+                                orden = trading_logic.comprar(  # Ejecuta la compra.
                                     client, symbol, cantidad, posiciones_abiertas,
                                     cf["stop_loss_pct"], transacciones_diarias,
                                     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
                                     OPEN_POSITIONS_FILE)
-                            if orden:
-                                general_message += f"✅ COMPRA TENDENCIA {symbol}\n"
+                            if orden:  # Si se envió/ejecutó correctamente...
+                                # Lo refleja en el informe.
+                                general_message += f"✅ COMPRA TENDENCIA {symbol}"
+# ------------------------------------------------------------------
+#   Lógica de venta
+# ------------------------------------------------------------------
 
-                    # 11. Lógica de venta
+ # 15. Lógica de venta
+                    # Si no se compra y existe posición abierta, se evalúa venta/gestión.
                     elif symbol in posiciones_abiertas:
-                        # Implementar lógica de venta en tendencia
-                        pass
+                        # Obtiene la posición almacenada para el símbolo.
+                        pos = posiciones_abiertas[symbol]
+                        # Precio de entrada registrado.
+                        precio_compra = pos['precio_compra']
+                        # Máximo precio alcanzado desde que se abrió la posición.
+                        max_precio_alcanzado = pos['max_precio_alcanzado']
+                        sl_actual = pos.get('stop_loss_fijo_nivel_actual',  # Nivel de SL actual (fijo) o se calcula por defecto sobre el precio de compra.
+                                            precio_compra * (1 - cf["stop_loss_pct"]))
+                        # Calcula el nivel de take-profit.
+                        tp = precio_compra * (1 + cf["take_profit_pct"])
+                        # Calcula trailing stop a partir del máximo alcanzado.
+                        tsl = max_precio_alcanzado * \
+                            (1 - cf["trailing_stop_pct"])
 
-                # Enviar resumen del ciclo
-                if general_message:
-                    telegram_handler.send_telegram_message(
-                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                        general_message)
+                        # Si el precio hace un nuevo máximo desde la entrada...
+                        if precio_actual > max_precio_alcanzado:
+                            with shared_data_lock:  # Protege escritura concurrente.
+                                # Actualiza el nuevo máximo.
+                                posiciones_abiertas[symbol]['max_precio_alcanzado'] = precio_actual
+                                # Persiste cambios de posiciones de forma diferida.
+                                position_manager.save_open_positions_debounced(
+                                    posiciones_abiertas)
 
-            # Calcular tiempo de espera hasta próximo ciclo
-            elapsed = time.time() - start_time_cycle
-            sleep_time = max(0, INTERVALO - elapsed)
-            time.sleep(sleep_time)
+                        # Flag que indica si se debe vender en este instante.
+                        vender_ahora = False
+                        # Texto que documenta el motivo de la venta.
+                        motivo = ""
+                        if precio_actual >= tp:  # Si se alcanza el objetivo de beneficio...
+                            # Marca venta por TP.
+                            vender_ahora, motivo = True, "TAKE PROFIT"
+                        # Si el precio cae al nivel de stop-loss fijo...
+                        elif precio_actual <= sl_actual:
+                            # Marca venta por SL.
+                            vender_ahora, motivo = True, "STOP LOSS"
+                        # Si cae al trailing stop pero aún por encima de la entrada...
+                        elif precio_actual <= tsl and precio_actual > precio_compra:
+                            # Marca venta por TSL.
+                            vender_ahora, motivo = True, "TRAILING STOP"
 
-    except Exception as e:
-        logging.error(f"❌ Error en trading_loop: {e}", exc_info=True)
-        time.sleep(60)  # Esperar antes de reintentar
+                        if vender_ahora:  # Si se determinó vender...
+                            cantidad_vender = binance_utils.ajustar_cantidad(  # Ajusta cantidad a vender al paso mínimo permitido.
+                                binance_utils.obtener_saldo_moneda(
+                                    client, base),
+                                binance_utils.get_step_size(client, symbol)
+                            )
+                            if cantidad_vender > 0:  # Solo procede si hay cantidad disponible según exchange.
+                                with shared_data_lock:  # Bloquea operaciones concurrentes.
+                                    orden = trading_logic.vender(  # Envía la orden de venta y actualiza el estado de la posición.
+                                        client, symbol, cantidad_vender,
+                                        posiciones_abiertas,
+                                        bot_params.get(
+                                            'TOTAL_BENEFICIO_ACUMULADO', 0.0),
+                                        bot_params, transacciones_diarias,
+                                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                                        OPEN_POSITIONS_FILE, config_manager,
+                                        # Pasa el motivo calculado (TP/SL/TSL).
+                                        motivo
+                                    )
+                                    bot_params['TOTAL_BENEFICIO_ACUMULADO'] = bot_params.get(  # Asegura que la clave exista (y pueda actualizarse en vender()).
+                                        'TOTAL_BENEFICIO_ACUMULADO', 0.0)
+                                    # Guarda la configuración/estadísticas tras la operación.
+                                    config_manager.save_parameters(bot_params)
+                                if orden:  # Si la orden se ejecutó...
+                                    # Añade la línea correspondiente al informe general.
+                                    general_message += f"🔴 VENTA {motivo} {symbol}"
 
+ # 16. Construye línea del informe por símbolo
+                    ema_c, ema_m, ema_l, rsi = trading_logic.calcular_ema_rsi(  # Recalcula EMAs/RSI para mostrar en el informe final por símbolo.
+                        client, symbol, EMA_CORTA_PERIODO, EMA_MEDIA_PERIODO,
+                        EMA_LARGA_PERIODO, RSI_PERIODO)
+                    # Si no hay datos suficientes para indicadores...
+                    if any(v is None for v in (ema_c, ema_m, ema_l, rsi)):
+                        # Omite la agregación del mensaje para este símbolo.
+                        continue
+                    # Determina emoji según relación de EMAs.
+                    tend_emoji = "📈" if precio_actual > ema_c > ema_m else "📉" if ema_l > ema_m > ema_c else "ǁ"
+                    # Texto de tendencia.
+                    tend_text = "Alcista" if tend_emoji == "📈" else "Bajista" if tend_emoji == "📉" else "Lateral/Consolidación"
+
+                    msg = (  # Construye el bloque de texto para este símbolo.
+                        # Muestra el símbolo en negrita (formato HTML/Telegram).
+                        f"📊 <b>{symbol}</b>\n"
+                        # Precio actual con 2 decimales.
+                        f"Precio: {precio_actual:.2f} USDT\n"
+                        # EMAs corta/media/larga.
+                        f"EMA: {ema_c:.2f} / {ema_m:.2f} / {ema_l:.2f}\n"
+                        f"RSI: {rsi:.2f}"  # RSI con 2 decimales.
+                        # Emoji + descripción de tendencia.
+                        f"Tend: {tend_emoji} {tend_text}\n"
+                    )
+                    # Si hay posición abierta, añade información de gestión.
+                    if symbol in posiciones_abiertas:
+                        # Recupera la posición.
+                        pos = posiciones_abiertas[symbol]
+                        msg += (  # Agrega métricas de la posición al mensaje.
+                            # Precio de entrada.
+                            f"Posición: Entrada {pos['precio_compra']:.2f} |   "
+                            # Nivel de take-profit actual por porcentaje global.
+                            f"TP: {pos['precio_compra']*(1+TAKE_PROFIT_PORCENTAJE):.2f} |   "
+                            # Stop-loss fijo actual o calculado.
+                            f"SL: {pos.get('stop_loss_fijo_nivel_actual', pos['precio_compra']*(1-STOP_LOSS_PORCENTAJE)):.2f} |   "
+                            # Máximo alcanzado desde la entrada.
+                            f"Max: {pos['max_precio_alcanzado']:.2f} |   "
+                            # Trailing stop estimado a partir del máximo.
+                            f"TSL: {pos['max_precio_alcanzado']*(1-TRAILING_STOP_PORCENTAJE):.2f}\n\n"
+                        )
+                    else:  # Si no hay posición...
+                        # Indica explícitamente que no se mantiene posición en este símbolo.
+                        msg += "Sin posición\n"
+                    # Añade el bloque del símbolo al mensaje general, con una línea en blanco de separación.
+                    general_message += msg + "\n"
+
+ # 17. Envía el informe por Telegram
+                # Sección crítica antes de enviar (por si otro hilo también publicara).
+                with shared_data_lock:
+                    try:  # Intenta enviar el resumen del ciclo.
+                        telegram_handler.send_telegram_message(  # Envío del mensaje general al chat de Telegram de monitoreo.
+                            # Pasa token, chat y contenido.
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, general_message)
+                    # Captura errores de red/formato/limites de Telegram.
+                    except Exception as e:
+                        # Loguea el fallo de envío.
+                        logging.error(f"Fallo al enviar informe: {e}")
+
+# 18. Actualiza el tiempo de la última ejecución
+                # Registra el instante actual como último chequeo para controlar INTERVALO.
+                last_trading_check_time = time.time()
+
+# 19. Espera el tiempo restante para el siguiente ciclo
+            sleep_duration = max(  # Calcula cuánto falta para completar el INTERVALO, evitando valores negativos.
+                0, INTERVALO - (time.time() - start_time_cycle))
+            # Muestra en consola cuánto falta para el siguiente ciclo (redondeado a s).
+            print(f"⏳ Próxima revisión en {sleep_duration:.0f}s")
+            # Duerme el hilo principal el tiempo calculado.
+            time.sleep(sleep_duration)
+
+    # Si el usuario detiene el proceso (Ctrl+C) u otra interrupción de teclado...
+    except KeyboardInterrupt:
+        # Informa en el log que se está cerrando ordenadamente.
+        logging.info("KeyboardInterrupt detectado. Terminando bot...")
+        # Señaliza al hilo de Telegram que debe detenerse.
+        telegram_stop_event.set()
+        # Espera a que el hilo de Telegram termine su ejecución.
+        telegram_thread.join()
+    except Exception as e:  # Captura cualquier otra excepción no controlada durante el ciclo.
+        # Log detallado del error con stack trace.
+        logging.error(f"Error crítico en bot.py: {e}", exc_info=True)
+        with shared_data_lock:  # Protege el envío de mensajes concurrentes.
+            telegram_handler.send_telegram_message(  # Envía un mensaje de error crítico con saldos para diagnóstico.
+                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                # Incluye saldos y posiciones formateadas.
+                f"❌ Error crítico: {e}{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
+        # Señaliza al hilo de Telegram que debe detenerse tras el error.
+        telegram_stop_event.set()
+        # Espera su finalización para salir de forma limpia.
+        telegram_thread.join()
+
+
+# Punto de entrada del script cuando se ejecuta directamente.
+# ✅
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("¡Bot activo!")
 
 if __name__ == "__main__":
     main()
