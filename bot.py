@@ -117,6 +117,8 @@ transacciones_diarias = []
 ultima_fecha_informe_enviado = None
 last_trading_check_time = 0
 shared_data_lock = threading.Lock()
+# ---------- VARIABLES GLOBALES ----------
+telegram_stop_event = threading.Event()
 
 
 def cfg(symbol):
