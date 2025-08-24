@@ -1161,5 +1161,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("¡Bot activo!")
 
 if __name__ == "__main__":
+    logging.info("🚀 Iniciando bot...")
+    trading_thread = threading.Thread(target=trading_loop, daemon=True)
+    trading_thread.start()
 
-    main()
+    # Para Railway: mantén el proceso vivo
+    try:
+        while True:
+            time.sleep(10)
+    except KeyboardInterrupt:
+        logging.info("🛑 Bot detenido.")
