@@ -118,6 +118,17 @@ ultima_fecha_informe_enviado = None
 last_trading_check_time = 0
 shared_data_lock = threading.Lock()
 
+# ---------- SCHEDULER IA ----------
+scheduler = BackgroundScheduler(timezone=pytz.UTC)
+scheduler.add_job(
+    'bot:ejecutar_optimizacion_ia',
+    trigger='cron',
+    hour=2,
+    minute=0,
+    timezone=pytz.UTC
+)
+scheduler.start()
+
 
 def cfg(symbol):
     return PARAMS.get(symbol, {
@@ -565,52 +576,37 @@ def indicadores(symbol):
 
 
 def ejecutar_optimizacion_ia():
-    """
-    Genera CSV, ejecuta optimización IA y envía informe por Telegram.
-    """
-    logging.info("📊 Generando CSV desde Firestore...")
-    generar_csv_desde_firestore()
+    """Genera CSV, ejecuta optimización IA y envía informe."""
 
-    logging.info("🤖 Ejecutando optimización IA...")
-    try:
-        import ai_optimizer
-        ai_optimizer.run()
-
-        # Cargar parámetros anteriores para comparar
-        import config_manager
-        params_anteriores = config_manager.load_parameters()
-
-        # Cargar nuevos parámetros
-        with open('ai_params.json', 'r') as f:
-            nuevos_params = json.load(f)
-
-        # Comparar cambios
-        cambios = []
-        for key in ["TAKE_PROFIT_PORCENTAJE", "TRAILING_STOP_PORCENTAJE", "RIESGO_POR_OPERACION_PORCENTAJE"]:
-            anterior = params_anteriores.get(key, 0)
-            nuevo = nuevos_params.get(key, 0)
-            if abs(anterior - nuevo) > 0.0001:  # Umbral de cambio mínimo
-                cambios.append(f"• {key}: {anterior:.4f} → {nuevo:.4f}")
-
-        # Enviar informe
-        if cambios:
-            msg = "🤖 Optimización IA completada:\n" + "\n".join(cambios)
-        else:
-            msg = "📉 Optimización IA: No se ha retocado nada (valores óptimos actuales)."
-
-        telegram_handler.send_telegram_message(
-            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
-
-        # Aplicar cambios en memoria
-        with shared_data_lock:
-            bot_params.update(nuevos_params)
-            config_manager.save_parameters(bot_params)
-
-    except Exception as e:
-        logging.error(f"❌ Error en optimización IA: {e}")
+    db = firestore_utils.get_firestore_db()
+    if not db:
         telegram_handler.send_telegram_message(
             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-            f"❌ Error en optimización IA: {str(e)[:200]}")
+            "❌ No se pudo conectar a Firestore para optimizar.")
+        return
+
+    FIRESTORE_PATH = f"artifacts/{os.getenv('__app_id', 'default-app-id')}/public/data/transactions_history"
+    docs = db.collection(FIRESTORE_PATH).stream()
+    data = [
+        {
+            'TAKE_PROFIT_PORCENTAJE': d.get('TAKE_PROFIT_PORCENTAJE', 0.03),
+            'TRAILING_STOP_PORCENTAJE': d.get('TRAILING_STOP_PORCENTAJE', 0.015),
+            'RIESGO_POR_OPERACION_PORCENTAJE': d.get('RIESGO_POR_OPERACION_PORCENTAJE', 0.01),
+            'ganancia_usdt': d.get('ganancia_usdt', 0)
+        }
+        for doc in docs
+        if (d := doc.to_dict())
+    ]
+    if not data:
+        telegram_handler.send_telegram_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+            "⚠️ No hay transacciones para optimizar.")
+        return
+    pd.DataFrame(data).to_csv('transacciones_historico.csv', index=False)
+    ai_optimizer.run()
+    telegram_handler.send_telegram_message(
+        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+        "✅ Optimización IA ejecutada.")
 
 
 def generar_csv_desde_firestore():
@@ -1160,14 +1156,24 @@ def trading_loop():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("¡Bot activo!")
 
+
+# ---------- MAIN ----------
 if __name__ == "__main__":
     logging.info("🚀 Iniciando bot...")
+
+    # 1. Hilo trading
     trading_thread = threading.Thread(target=trading_loop, daemon=True)
     trading_thread.start()
 
-    # Para Railway: mantén el proceso vivo
+    # 2. Hilo Telegram
+    telegram_thread = threading.Thread(target=telegram_listener,
+                                       args=(telegram_stop_event,), daemon=True)
+    telegram_thread.start()
+
+    # 3. Mantener proceso vivo
     try:
         while True:
             time.sleep(10)
     except KeyboardInterrupt:
+        telegram_stop_event.set()
         logging.info("🛑 Bot detenido.")
