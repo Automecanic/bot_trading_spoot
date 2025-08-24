@@ -1168,6 +1168,5 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("¡Bot activo!")
 
 if __name__ == "__main__":
-    import os
-    os.environ['TZ'] = 'UTC'  # Asegura zona horaria UTC
+
     main()
