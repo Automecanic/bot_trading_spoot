@@ -510,6 +510,7 @@ def send_help_message(token, chat_id):
     help_message = (
         "🤖 <b>Comandos disponibles:</b>\n\n"
         "<b>Parámetros de Estrategia:</b>\n"
+        " - <code>/optimizar_ai</code>: la IA optimiza los parámetros según los resultados.\n"
         " - <code>/get_params</code>: Muestra los parámetros actuales del bot.\n"
         " - <code>/set_tp &lt;valor&gt;</code>: Establece el porcentaje de Take Profit (ej. 0.03).\n"
         " - <code>/set_sl_fijo &lt;valor&gt;</code>: Establece el porcentaje de Stop Loss Fijo (ej. 0.02).\n"
