@@ -33,6 +33,7 @@ import firestore_utils
 import reporting_manager
 import json
 import os
+import ai_optimizer as inteligens  # Importa el módulo de optimización AI
 # NUEVO módulo para detectar mercado lateral y operar en rango
 from range_trading import detectar_rango_lateral, estrategia_rango
 
@@ -78,7 +79,7 @@ PARAMS = bot_params.get("symbols", {})
 # Asegurar persistencia
 config_manager.save_parameters(bot_params)
 
-
+AI_INTERVAL = 3600 * 12  # Intervalo para optimización AI (1 hora)
 # ----------------- CLIENTE BINANCE -----------------
 client = Client(API_KEY, API_SECRET, testnet=True,
                 requests_params={'timeout': 30})
@@ -548,6 +549,25 @@ def indicadores(symbol):
     # ---función principal del bot comenzado por el usuario
 
 
+def optimizar_ai_loop(stop_event):
+    """Función que ejecuta la optimización cada 12 horas"""
+    while not stop_event.is_set():
+        try:
+            logging.info("🔄 Iniciando optimización IA (12h)...")
+            inteligens.run_optimization()
+            logging.info("✅ Optimización IA completada")
+
+            # Esperar 12 horas
+            for _ in range(12):
+                if stop_event.is_set():
+                    break
+                time.sleep(3600)
+
+        except Exception as e:
+            logging.error(f"❌ Error en optimización IA: {e}")
+            time.sleep(3600)
+
+
 def main():  # Define la función principal del bot.
     """
     Función principal que inicia el bot y maneja el ciclo de trading.
@@ -584,6 +604,16 @@ def main():  # Define la función principal del bot.
         # Pasa el evento de parada como argumento al listener.
         target=telegram_listener, args=(telegram_stop_event,))
     telegram_thread.start()  # Inicia el hilo de escucha de Telegram.
+   # 6. CREAR HILO DE OPTIMIZACIÓN CADA 12 HORAS
+    optimizar_ai_stop_event = threading.Event()
+
+    # Crear e iniciar el hilo de optimización
+    optimizar_ai_thread = threading.Thread(
+        target=lambda: optimizar_ai_loop(optimizar_ai_stop_event),
+        daemon=True
+    )
+    optimizar_ai_thread.start()
+    logging.info("🔄 Hilo de optimización IA cada 12h iniciado")
 
     try:  # Bloque principal protegido para capturar interrupciones/errores.
         # Bucle infinito del ciclo de trading (hasta que se interrumpa manual o programáticamente).
@@ -1015,6 +1045,9 @@ def main():  # Define la función principal del bot.
                 last_trading_check_time = time.time()
 
 # 19. Espera el tiempo restante para el siguiente ciclo
+            sleep_duration_ai = max(  # Calcula cuánto falta para completar el INTERVALO, evitando valores negativos.
+                0, AI_INTERVAL - (time.time() - start_time_cycle))
+
             sleep_duration = max(  # Calcula cuánto falta para completar el INTERVALO, evitando valores negativos.
                 0, INTERVALO - (time.time() - start_time_cycle))
             # Muestra en consola cuánto falta para el siguiente ciclo (redondeado a s).
@@ -1030,6 +1063,9 @@ def main():  # Define la función principal del bot.
         telegram_stop_event.set()
         # Espera a que el hilo de Telegram termine su ejecución.
         telegram_thread.join()
+        optimizar_ai_stop_event.set()  # Señaliza que debe detenerse
+        ai_optimizer_thread.join()     # Espera a que termine
+
     except Exception as e:  # Captura cualquier otra excepción no controlada durante el ciclo.
         # Log detallado del error con stack trace.
         logging.error(f"Error crítico en bot.py: {e}", exc_info=True)
@@ -1042,6 +1078,8 @@ def main():  # Define la función principal del bot.
         telegram_stop_event.set()
         # Espera su finalización para salir de forma limpia.
         telegram_thread.join()
+        optimizar_ai_stop_event.set()  # Señaliza que debe detenerse
+        optimizar_ai_thread.join()     # Espera a que termine
 
 
 # Punto de entrada del script cuando se ejecuta directamente.
