@@ -91,6 +91,7 @@ def run_optimization():
             logging.error(f"❌ Error al guardar en Firestore: {e}")
 
     logging.info("✅ Optimización IA completada.")
+    return True
 
 
 # Permitir ejecución directa
