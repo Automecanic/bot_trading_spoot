@@ -118,17 +118,6 @@ ultima_fecha_informe_enviado = None
 last_trading_check_time = 0
 shared_data_lock = threading.Lock()
 
-# ---------- SCHEDULER IA ----------
-scheduler = BackgroundScheduler(timezone=pytz.UTC)
-scheduler.add_job(
-    ejecutar_optimizacion_ia,
-    trigger='cron',
-    hour=2,
-    minute=0,
-    timezone=pytz.UTC
-)
-scheduler.start()
-
 
 def cfg(symbol):
     return PARAMS.get(symbol, {
