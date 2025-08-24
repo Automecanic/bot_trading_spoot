@@ -562,17 +562,51 @@ def indicadores(symbol):
 
 def ejecutar_optimizacion_ia():
     """
-    Genera CSV desde Firestore y ejecuta optimización IA.
+    Genera CSV, ejecuta optimización IA y envía informe por Telegram.
     """
     logging.info("📊 Generando CSV desde Firestore...")
-    generar_csv_desde_firestore()  # ← Nuevo
+    generar_csv_desde_firestore()
 
     logging.info("🤖 Ejecutando optimización IA...")
     try:
         import ai_optimizer
-        ai_optimizer.run_optimization()
+        ai_optimizer.run()
+
+        # Cargar parámetros anteriores para comparar
+        import config_manager
+        params_anteriores = config_manager.load_parameters()
+
+        # Cargar nuevos parámetros
+        with open('ai_params.json', 'r') as f:
+            nuevos_params = json.load(f)
+
+        # Comparar cambios
+        cambios = []
+        for key in ["TAKE_PROFIT_PORCENTAJE", "TRAILING_STOP_PORCENTAJE", "RIESGO_POR_OPERACION_PORCENTAJE"]:
+            anterior = params_anteriores.get(key, 0)
+            nuevo = nuevos_params.get(key, 0)
+            if abs(anterior - nuevo) > 0.0001:  # Umbral de cambio mínimo
+                cambios.append(f"• {key}: {anterior:.4f} → {nuevo:.4f}")
+
+        # Enviar informe
+        if cambios:
+            msg = "🤖 Optimización IA completada:\n" + "\n".join(cambios)
+        else:
+            msg = "📉 Optimización IA: No se ha retocado nada (valores óptimos actuales)."
+
+        telegram_handler.send_telegram_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
+
+        # Aplicar cambios en memoria
+        with shared_data_lock:
+            bot_params.update(nuevos_params)
+            config_manager.save_parameters(bot_params)
+
     except Exception as e:
         logging.error(f"❌ Error en optimización IA: {e}")
+        telegram_handler.send_telegram_message(
+            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+            f"❌ Error en optimización IA: {str(e)[:200]}")
 
 
 def generar_csv_desde_firestore():
