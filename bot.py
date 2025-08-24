@@ -648,9 +648,11 @@ def main():
     # 1. Scheduler IA – 02:00 UTC diario
     scheduler = BackgroundScheduler()
     scheduler.add_job(
-        ai_optimizer.run_optimization(),
-        trigger="cron",
-        hour=2, minute=0, timezone="UTC"
+        'bot:ejecutar_optimizacion_ia',  # ← Referencia textual al callable
+        trigger='cron',
+        hour=2,
+        minute=0,
+        timezone='UTC'
     )
     scheduler.start()
     logging.info("📆 Optimización IA programada a las 02:00 UTC")
@@ -1158,4 +1160,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("¡Bot activo!")
 
 if __name__ == "__main__":
+    import os
+    os.environ['TZ'] = 'UTC'  # Asegura zona horaria UTC
     main()
