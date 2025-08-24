@@ -652,6 +652,11 @@ def main():
     # 1. Logs iniciales
     logging.info("🚀 Iniciando bot...")
 
+# Inicia el bot de Telegram en un hilo separado
+    telegram_thread = threading.Thread(
+        target=telegram_listener, daemon=True)
+    telegram_thread.start()
+
     # 2. Scheduler IA (una sola vez)
     scheduler = BackgroundScheduler(timezone=pytz.UTC)
     scheduler.add_job(
