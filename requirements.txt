@@ -9,4 +9,4 @@ numpy==1.26.4
 scikit-learn
 optuna
 google-cloud-firestore
-apscheduler
+apscheduler==3.6.3
