@@ -390,6 +390,16 @@ def handle_telegram_commands():
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "Generando CSV...")
                         reporting_manager.generar_y_enviar_csv_ahora(
                             TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+                elif command == "/optimizar_ai":
+
+                    telegram_handler.send_telegram_message(
+                        TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "optimizando...")
+                    if (inteligens.run_optimization()):
+                        telegram_handler.send_telegram_message(
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "✅ Optimización IA completada")
+                    else:
+                        telegram_handler.send_telegram_message(
+                            TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, "❌ Error en Optimización IA")
 
                 elif command == "/beneficio":
                     db = firestore_utils.get_firestore_db()
