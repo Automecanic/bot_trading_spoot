@@ -6,6 +6,8 @@ from sklearn.linear_model import LinearRegression
 import optuna
 import firestore_utils
 import logging
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,6 +17,7 @@ def run_optimization():
     """
     Función principal que ejecuta la optimización de parámetros
     y guarda los resultados en ai_params.json y Firestore.
+    Ahora incluye validación train/test y métricas más robustas.
     """
     db = firestore_utils.get_firestore_db()
 
@@ -47,10 +50,17 @@ def run_optimization():
         logging.warning("⚠️ No hay suficientes datos válidos para optimizar.")
         return
 
-    # Modelo ML
+    # Separar datos en train y test
     X = df[cols[:-1]]
     y = df['ganancia']
-    model = LinearRegression().fit(X, y)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    model = LinearRegression().fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    logging.info(f"📊 Error cuadrático medio en validación: {mse:.4f}")
 
     # Optuna
     def objetivo(trial):
@@ -58,11 +68,21 @@ def run_optimization():
         ts = trial.suggest_float('TRAILING_STOP_PORCENTAJE', 0.01, 0.05)
         riesgo = trial.suggest_float(
             'RIESGO_POR_OPERACION_PORCENTAJE', 0.002, 0.01)
+
         ganancia_predicha = model.predict([[tp, ts, riesgo]])[0]
+
+        # Calcular drawdown estimado (simulado como proporción del riesgo)
+        drawdown = riesgo * 100
+
+        # Ratio ganancia/riesgo
+        ratio_gr = ganancia_predicha / (riesgo * 100) if riesgo > 0 else 0
+
+        # Penalización si drawdown supera cierto umbral
         penalizacion = 0
-        if riesgo > 0.008:
-            penalizacion += (riesgo - 0.008) * 100
-        return ganancia_predicha - penalizacion
+        if drawdown > 5:
+            penalizacion += (drawdown - 5)
+
+        return ganancia_predicha + ratio_gr - penalizacion
 
     study = optuna.create_study(direction='maximize')
     study.optimize(objetivo, n_trials=50)
@@ -75,7 +95,8 @@ def run_optimization():
         "RIESGO_POR_OPERACION_PORCENTAJE": round(max(0.002, min(0.01, best["RIESGO_POR_OPERACION_PORCENTAJE"])), 4),
         "ganancia_predicha": round(study.best_value, 2),
         "fuente_optimizacion": "optuna_bayesiano",
-        "n_trials_optuna": len(study.trials)
+        "n_trials_optuna": len(study.trials),
+        "mse_validacion": round(mse, 4)
     }
 
     # Guardar

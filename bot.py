@@ -560,7 +560,7 @@ def indicadores(symbol):
 
 
 def optimizar_ai_loop(stop_event):
-    """Función que ejecuta la optimización cada 12 horas"""
+    """Función que ejecuta la optimización cada 24 horas"""
     while not stop_event.is_set():
         try:
             logging.info("🔄 Iniciando optimización IA (12h)...")
@@ -568,7 +568,7 @@ def optimizar_ai_loop(stop_event):
             logging.info("✅ Optimización IA completada")
 
             # Esperar 12 horas
-            for _ in range(12):
+            for _ in range(24):
                 if stop_event.is_set():
                     break
                 time.sleep(3600)
