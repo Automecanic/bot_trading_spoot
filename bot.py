@@ -67,6 +67,7 @@ TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"]
 # Porcentaje de pérdida máx permitida en cada operación (ej: 0.02 = 2%)
 STOP_LOSS_PORCENTAJE = bot_params["STOP_LOSS_PORCENTAJE"]
 # Trailing stop: mantiene stop loss actualizándose según el precio sube
+TRAILING_STOP_PORCENTAJE = bot_params["TRAILING_STOP_PORCENTAJE"]
 # Parámetros de las Medias Móviles Exponenciales (EMA) - indicadores de tendencia
 # EMA corta: seguimiento rápido, sensible a cambios recientes
 EMA_CORTA_PERIODO = bot_params.get("EMA_CORTA_PERIODO", 20)
@@ -79,6 +80,7 @@ RSI_PERIODO = bot_params["RSI_PERIODO"]
 # Umbral RSI por encima del cual se considera sobrecompra (ej: 70 = RSI > 70)
 RSI_UMBRAL_SOBRECOMPRA = bot_params["RSI_UMBRAL_SOBRECOMPRA"]
 # Porcentaje de ganancia mínima para activar breakeven (move stop loss al precio de entrada)
+BREAKEVEN_PORCENTAJE = bot_params["BREAKEVEN_PORCENTAJE"]
 
 # NUEVOS parámetros para operar en rango (estrategia de rango lateral)
 # Activa/desactiva la detección automática de mercados laterales
