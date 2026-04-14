@@ -15,13 +15,14 @@ VERSIÓN COMPLETA:
 import os
 import time
 import json
-import csv
 import logging
 import threading
 from datetime import datetime, timedelta
 import requests
 from binance.client import Client
 from binance.enums import *
+import numpy as np
+import talib
 
 # ------------- IMPORTS DE MÓDULOS PROPIOS -------------
 import config_manager
@@ -31,8 +32,6 @@ import binance_utils
 import trading_logic
 import firestore_utils
 import reporting_manager
-import json
-import os
 import ai_optimizer as inteligens  # Importa el módulo de optimización AI
 # NUEVO módulo para detectar mercado lateral y operar en rango
 from range_trading import detectar_rango_lateral, estrategia_rango
@@ -52,61 +51,98 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OPEN_POSITIONS_FILE = "open_positions.json"
 
 # --------- CARGA DE PARÁMETROS (incluidos rango) ----------
+# Carga todos los parámetros del bot desde el archivo de configuración o base de datos
 bot_params = config_manager.load_parameters()
 
-# Parámetros clásicos
+# Lista de símbolos que el bot monitorea y opera activamente
+# Parámetros clásicos de trading: define los pares de trading a seguir
 SYMBOLS = ["BTCUSDT", "BNBUSDT", "XLMUSDT", "TRXUSDT",
            "ADAUSDT", "XRPUSDT", "DOGEUSDT", "SOLUSDT", "ETHUSDT"]
+# Intervalo (en segundos) entre cada análisis y posible ejecución de operaciones
 INTERVALO = bot_params["INTERVALO"]
+# Porcentaje del balance a riesgo en cada operación (ej: 0.02 = 2%)
 RIESGO_POR_OPERACION_PORCENTAJE = bot_params["RIESGO_POR_OPERACION_PORCENTAJE"]
+# Porcentaje de ganancia objetivo (ej: 0.03 = 3%)
 TAKE_PROFIT_PORCENTAJE = bot_params["TAKE_PROFIT_PORCENTAJE"]
+# Porcentaje de pérdida máx permitida en cada operación (ej: 0.02 = 2%)
 STOP_LOSS_PORCENTAJE = bot_params["STOP_LOSS_PORCENTAJE"]
-TRAILING_STOP_PORCENTAJE = bot_params["TRAILING_STOP_PORCENTAJE"]
+# Trailing stop: mantiene stop loss actualizándose según el precio sube
+# Parámetros de las Medias Móviles Exponenciales (EMA) - indicadores de tendencia
+# EMA corta: seguimiento rápido, sensible a cambios recientes
 EMA_CORTA_PERIODO = bot_params.get("EMA_CORTA_PERIODO", 20)
+# EMA media: balance entre sensibilidad y estabilidad
 EMA_MEDIA_PERIODO = bot_params.get("EMA_MEDIA_PERIODO", 50)
+# EMA larga: detecta tendencia general, menos ruido
 EMA_LARGA_PERIODO = bot_params.get("EMA_LARGA_PERIODO", 200)
+# Período del RSI (Relative Strength Index) - indica sobrecompra/sobreventa
 RSI_PERIODO = bot_params["RSI_PERIODO"]
+# Umbral RSI por encima del cual se considera sobrecompra (ej: 70 = RSI > 70)
 RSI_UMBRAL_SOBRECOMPRA = bot_params["RSI_UMBRAL_SOBRECOMPRA"]
-BREAKEVEN_PORCENTAJE = bot_params["BREAKEVEN_PORCENTAJE"]
+# Porcentaje de ganancia mínima para activar breakeven (move stop loss al precio de entrada)
 
-# NUEVOS parámetros para operar en rango
+# NUEVOS parámetros para operar en rango (estrategia de rango lateral)
+# Activa/desactiva la detección automática de mercados laterales
 RANGO_OPERAR = bot_params.get("RANGO_OPERAR", True)
+# Número de velas a analizar para detectar rango lateral
 RANGO_PERIODO_ANALISIS = bot_params.get("RANGO_PERIODO_ANALISIS", 20)
+# Umbral del ATR (Average True Range) para identificar rangos estrechos
 RANGO_UMBRAL_ATR = bot_params.get("RANGO_UMBRAL_ATR", 0.015)
+# RSI por debajo del cual se compra en rango (ej: 30 = entrada en sobreventa)
 RANGO_RSI_SOBREVENTA = bot_params.get("RANGO_RSI_SOBREVENTA", 30)
+# RSI por encima del cual se vende en rango (ej: 70 = salida en sobrecompra)
 RANGO_RSI_SOBRECOMPRA = bot_params.get("RANGO_RSI_SOBRECOMPRA", 70)
+# Parámetros personalizados por símbolo (ej: take_profit específico por par)
 PARAMS = bot_params.get("symbols", {})
-# Asegurar persistencia
+# Asegurar persistencia: guarda los parámetros cargados en almacenamiento
 config_manager.save_parameters(bot_params)
 
-AI_INTERVAL = 3600 * 12  # Intervalo para optimización AI (1 hora)
-# ----------------- CLIENTE BINANCE -----------------
+# Intervalo para optimización IA gestionado por hilo dedicado (ver optimizar_ai_loop)
+# # --------- CLIENTE BINANCE ---------
+# Inicializa el cliente de Binance con credenciales y configuración de testnet
 client = Client(API_KEY, API_SECRET, testnet=True,
                 requests_params={'timeout': 30})
+# Sobrescribe la URL del cliente para usar el testnet de Binance
 client.API_URL = 'https://testnet.binance.vision/api'
 
-# ----------------- VARIABLES DE CONTROL -----------------
+# --------- VARIABLES DE CONTROL ---------
+# Diccionario con todas las posiciones activas del bot
 posiciones_abiertas = position_manager.load_open_positions(
     STOP_LOSS_PORCENTAJE)
+# ID del último update de Telegram procesado (para no procesar duplicados)
 last_update_id = 0
+# Intervalo en segundos entre revisiones de comandos de Telegram
 TELEGRAM_LISTEN_INTERVAL = 5
+# Lista de transacciones registradas durante el día actual
 transacciones_diarias = []
+# Fecha del último informe CSV enviado (YYYY-MM-DD)
 ultima_fecha_informe_enviado = None
+# Timestamp del último análisis de trading ejecutado
 last_trading_check_time = 0
+# Lock (mutex) para evitar condiciones de carrera en acceso a variables compartidas
 shared_data_lock = threading.Lock()
 
 
 def cfg(symbol):
+    """
+    Retorna la configuración personalizada de un símbolo.
+    Si existe configuración específica, la usa; si no, retorna valores por defecto.
+
+    Args:
+        symbol (str): Par de trading (ej: 'BTCUSDT')
+
+    Returns:
+        dict: Diccionario con parámetros personalizados del símbolo
+    """
     return PARAMS.get(symbol, {
-        "stop_loss_pct": 0.03,
-        "take_profit_pct": 0.05,
-        "trailing_stop_pct": 0.025,
-        "breakeven_pct": 0.01,
-        "rsi_buy": 35,
-        "rsi_sell": 65,
-        "volume_factor": 1.5,
-        "ema_fast": 9,
-        "ema_slow": 21
+        "stop_loss_pct": 0.03,  # Stop loss por defecto: 3%
+        "take_profit_pct": 0.05,  # Take profit por defecto: 5%
+        "trailing_stop_pct": 0.025,  # Trailing stop por defecto: 2.5%
+        "breakeven_pct": 0.01,  # Breakeven por defecto: 1%
+        "rsi_buy": 35,  # RSI para entrada en compra
+        "rsi_sell": 65,  # RSI para salida/venta
+        "volume_factor": 1.5,  # Factor de volumen multiplicador
+        "ema_fast": 9,  # Período EMA rápida
+        "ema_slow": 21  # Período EMA lenta
     })
 
 
@@ -514,28 +550,45 @@ def handle_telegram_commands():
 
 def enviar_resumen_telegram(resumen_dict, saldo_usdt, beneficio):
     """
-    Envía un resumen compacto al chat de Telegram.
+    Envía un resumen compacto del ciclo de trading al chat de Telegram.
+    Incluye estado de cada símbolo, saldo y beneficio acumulado.
+
+    Args:
+        resumen_dict (dict): Diccionario con análisis de cada símbolo
+        saldo_usdt (float): Balance actual en USDT
+        beneficio (float): Beneficio acumulado total
     """
-    # Construimos el mensaje
+    # Construimos el mensaje con formato HTML para Telegram
     msg = "📊 <b>Resumen del ciclo:</b>\n"
     for symbol, data in resumen_dict.items():
         estado = "📈 TENDENCIA" if not data['en_rango'] else "🔀 RANGO"
         msg += f"• {symbol}: {estado} | ADX: {data['adx']:.1f} | Ancho: {data['band_width']:.3f}\n"
 
-        msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
-        msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
-        msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
+    msg += f"\n💰 <b>Saldo USDT:</b> {saldo_usdt:.2f}\n"
+    msg += f"📈 <b>Beneficio acumulado:</b> {beneficio:.2f} USDT\n"
+    msg += f"⏳ <b>Próxima revisión:</b> {bot_params['INTERVALO']}s"
 
     telegram_handler.send_telegram_message(
         TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, msg)
 
 
 def telegram_listener(stop_event):
+    """
+    Función que se ejecuta en un hilo separado escuchando comandos de Telegram.
+    Polling continuo de nuevos mensajes cada TELEGRAM_LISTEN_INTERVAL segundos.
+
+    Args:
+        stop_event (threading.Event): Evento para detener el listener
+    """
+    # Bucle continuo mientras no se establezca el evento de parada
     while not stop_event.is_set():
         try:
+            # Procesa todos los comandos de Telegram pendientes
             handle_telegram_commands()
+            # Espera antes de hacer polling nuevamente
             time.sleep(TELEGRAM_LISTEN_INTERVAL)
         except Exception as e:
+            # Log de errores sin detener el listener
             logging.error(f"Error hilo Telegram: {e}")
 
 # ------------------------------------------------------------------
@@ -544,15 +597,36 @@ def telegram_listener(stop_event):
 
 
 def indicadores(symbol):
-    """Retorna precio, rsi, ema9, ema21, vol_ratio"""
+    """
+    Calcula los indicadores técnicos principais para un símbolo en velas de 1 hora.
+
+    Args:
+        symbol (str): Par de trading (ej: 'BTCUSDT')
+
+    Returns:
+        tuple: (price, rsi, ema_fast, ema_slow, vol_ratio)
+            - price: Precio de cierre actual
+            - rsi: Índice de Fuerza Relativa (0-100)
+            - ema_fast: Media móvil exponencial rápida
+            - ema_slow: Media móvil exponencial lenta
+            - vol_ratio: Ratio de volumen (volumen actual vs media 20 velas)
+    """
+    # Obtiene las últimas 50 velas de 1 hora para tener suficiente historia
     klines = client.get_klines(
         symbol=symbol, interval=Client.KLINE_INTERVAL_1HOUR, limit=50)
+    # Extrae los precios de cierre (índice 4 en cada vela)
     closes = np.array([float(k[4]) for k in klines])
+    # Extrae los volúmenes (índice 5 en cada vela)
     vols = np.array([float(k[5]) for k in klines])
+    # Calcula RSI con período 14 (estándar), toma el valor actual (-1)
     rsi = talib.RSI(closes, timeperiod=14)[-1]
+    # Calcula EMA rápida usando período personalizado del símbolo
     ema_fast = talib.EMA(closes, timeperiod=cfg(symbol)["ema_fast"])[-1]
+    # Calcula EMA lenta usando período personalizado del símbolo
     ema_slow = talib.EMA(closes, timeperiod=cfg(symbol)["ema_slow"])[-1]
+    # Calcula ratio: volumen actual vs promedio de últimas 20 velas (detecta explosiones)
     vol_ratio = vols[-1] / (np.mean(vols[-20:]) + 1e-8)
+    # Obtiene el precio de cierre más reciente
     price = closes[-1]
     return price, rsi, ema_fast, ema_slow, vol_ratio
 
@@ -560,21 +634,34 @@ def indicadores(symbol):
 
 
 def optimizar_ai_loop(stop_event):
-    """Función que ejecuta la optimización cada 24 horas"""
+    """
+    Ejecuta la optimización IA cada 12 horas en un hilo separado.
+    Permite ajustes automáticos de parámetros basados en histórico de trades.
+
+    Args:
+        stop_event (threading.Event): Evento para detener el loop
+    """
     while not stop_event.is_set():
         try:
-            logging.info("🔄 Iniciando optimización IA (12h)...")
+            # Inicia proceso de optimización
+            logging.info("🔄 Iniciando optimización IA (periodo 12h)...")
+            # Ejecuta optimización (analiza histórico y ajusta parámetros)
             inteligens.run_optimization()
-            logging.info("✅ Optimización IA completada")
+            logging.info("✅ Optimización IA completada correctamente")
 
-            # Esperar 12 horas
+            # Espera 12 horas (24 x 1800 segundos / 2 = 12 horas)
+            # Utiliza loop para permitir parada rápida sin esperar bloqueada
             for _ in range(24):
+                # Verifica si se solicitó detener
                 if stop_event.is_set():
                     break
+                # Duerme en incrementos de 1 hora
                 time.sleep(3600)
 
         except Exception as e:
+            # Log de errores durante optimización
             logging.error(f"❌ Error en optimización IA: {e}")
+            # Continúa esperando antes de reintentar
             time.sleep(3600)
 
 
@@ -625,10 +712,12 @@ def main():  # Define la función principal del bot.
     optimizar_ai_thread.start()
     logging.info("🔄 Hilo de optimización IA cada 12h iniciado")
 
-    try:  # Bloque principal protegido para capturar interrupciones/errores.
-        # Bucle infinito del ciclo de trading (hasta que se interrumpa manual o programáticamente).
+    try:
+        # Bloque principal protegido - captura excepciones graves e interrupciones (Ctrl+C)
+        # Bucle infinito del ciclo de trading (hasta que se interrumpa manual o programáticamente)
+        # Cada iteración puede durar varios segundos según el intervalo configurado
         while True:
-            # Marca el instante de inicio del ciclo para gestionar el tiempo de espera.
+            # Marca el instante de inicio del ciclo para calcular tiempo de espera
             start_time_cycle = time.time()
 
 # ------------------------------------------------------------------
@@ -1055,9 +1144,6 @@ def main():  # Define la función principal del bot.
                 last_trading_check_time = time.time()
 
 # 19. Espera el tiempo restante para el siguiente ciclo
-            sleep_duration_ai = max(  # Calcula cuánto falta para completar el INTERVALO, evitando valores negativos.
-                0, AI_INTERVAL - (time.time() - start_time_cycle))
-
             sleep_duration = max(  # Calcula cuánto falta para completar el INTERVALO, evitando valores negativos.
                 0, INTERVALO - (time.time() - start_time_cycle))
             # Muestra en consola cuánto falta para el siguiente ciclo (redondeado a s).
@@ -1067,36 +1153,55 @@ def main():  # Define la función principal del bot.
 
     # Si el usuario detiene el proceso (Ctrl+C) u otra interrupción de teclado...
     except KeyboardInterrupt:
-        # Informa en el log que se está cerrando ordenadamente.
-        logging.info("KeyboardInterrupt detectado. Terminando bot...")
-        # Señaliza al hilo de Telegram que debe detenerse.
+        # Informa en el log que se está cerrando ordenadamente de forma controlada
+        logging.info(
+            "KeyboardInterrupt detectado. Terminando bot de forma ordenada...")
+        # Señaliza al hilo de Telegram que debe detenerse
         telegram_stop_event.set()
-        # Espera a que el hilo de Telegram termine su ejecución.
-        telegram_thread.join()
-        optimizar_ai_stop_event.set()  # Señaliza que debe detenerse
-        ai_optimizer_thread.join()     # Espera a que termine
+        # Espera a que el hilo de Telegram termine su ejecución de forma limpia
+        telegram_thread.join(timeout=5)
+        # Señaliza al hilo de optimización IA que debe parar
+        optimizar_ai_stop_event.set()
+        # Espera a que el hilo de optimización termine
+        optimizar_ai_thread.join(timeout=5)
+        logging.info("Bot detenido correctamente")
 
-    except Exception as e:  # Captura cualquier otra excepción no controlada durante el ciclo.
-        # Log detallado del error con stack trace.
-        logging.error(f"Error crítico en bot.py: {e}", exc_info=True)
-        with shared_data_lock:  # Protege el envío de mensajes concurrentes.
-            telegram_handler.send_telegram_message(  # Envía un mensaje de error crítico con saldos para diagnóstico.
-                TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-                # Incluye saldos y posiciones formateadas.
-                f"❌ Error crítico: {e}{binance_utils.obtener_saldos_formateados(client, posiciones_abiertas)}")
-        # Señaliza al hilo de Telegram que debe detenerse tras el error.
+    except Exception as e:
+        # Captura cualquier otra excepción no controlada durante el ciclo de trading
+        # Log detallado del error con stack trace completo para debugging
+        logging.error(f"Error critico en bot.py: {e}", exc_info=True)
+        # Protege el envío de mensajes en caso de errores concurrentes
+        with shared_data_lock:
+            try:
+                # Envía un mensaje de error crítico con saldos actuales para diagnóstico remoto
+                telegram_handler.send_telegram_message(
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+                    # Incluye saldos y posiciones formateadas para conocer el estado al fallar
+                    f"Error critico detectado: {e}")
+            except:
+                # Si falla el envío de Telegram, al menos lo registramos en logs
+                logging.error(
+                    "No se pudo enviar mensaje de error por Telegram")
+        # Señaliza al hilo de Telegram que debe detenerse tras el error
         telegram_stop_event.set()
-        # Espera su finalización para salir de forma limpia.
-        telegram_thread.join()
-        optimizar_ai_stop_event.set()  # Señaliza que debe detenerse
-        optimizar_ai_thread.join()     # Espera a que termine
+        # Espera su finalización para salir de forma limpia
+        telegram_thread.join(timeout=5)
+        # Señaliza que debe detenerse
+        optimizar_ai_stop_event.set()
+        # Espera a que termine
+        optimizar_ai_thread.join(timeout=5)
 
 
-# Punto de entrada del script cuando se ejecuta directamente.
+# ========================================================================
+# PUNTO DE ENTRADA DEL SCRIPT
+# ========================================================================
+# Punto de entrada del script cuando se ejecuta directamente (no importado como módulo)
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,  # Configura el nivel de logging a INFO.
-                        # Define el formato de las líneas de log.
+    # Configura el nivel de logging a INFO para ver todos los eventos importantes
+    logging.basicConfig(level=logging.INFO,
+                        # Define el formato completo de las líneas de log con timestamp
                         format='%(asctime)s - %(levelname)s - %(message)s')
-    # Escribe una línea inicial en el log.
+    # Escribe una línea inicial en el log indicando el inicio del bot
     logging.info("Iniciando bot de trading...")
-    main()  # Llama a la función principal para iniciar el bot.
+    # Llama a la función principal para iniciar el ciclo de trading
+    main()
