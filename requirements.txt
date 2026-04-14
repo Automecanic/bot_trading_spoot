@@ -6,6 +6,7 @@ requests
 firebase-admin
 pandas==2.2.2
 numpy==1.26.4
+TA-Lib
 scikit-learn
 optuna
 google-cloud-firestore
